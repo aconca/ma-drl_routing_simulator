@@ -5,6 +5,7 @@
 output
 SatNExV4
 SatNEx
+venv/
 .venv
 **/.DS_Store
 # **.npy

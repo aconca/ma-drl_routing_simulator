@@ -29,6 +29,7 @@ from matplotlib.patches import FancyArrowPatch
 from matplotlib.colors import Normalize
 import matplotlib.cm as cm
 
+from geopy.distance import geodesic
 
 ###############################################################################
 ################################    Log file    ###############################
@@ -4430,6 +4431,13 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     print = builtins.print # Idk why but print breaks here so I had to rebuilt it
     # print(type(print))
 
+    print("Building terrestrial graph...")
+    G = build_terrestrial_graph("TerrestrialNodes.csv","Gateways.csv", k_nearest=5, max_km=20000)
+    print("Graph built.")
+
+    # checking the network
+    draw_terrestrial_graph(G)
+
     constellationType = inputParams['Constellation'][0]
     fraction = inputParams['Fraction'][0]
     testType = inputParams['Test type'][0]
@@ -5192,6 +5200,80 @@ def createGraph(earth, matching='Greedy'):
 
     return g
 
+
+def build_terrestrial_graph(terrestrial_nodes_csv, gateways_csv, k_nearest=5, max_km=20000):
+    df_cities = pd.read_csv(terrestrial_nodes_csv)
+    df_gateways = pd.read_csv(gateways_csv)
+
+    G = nx.Graph()
+
+    for _, row in df_cities.iterrows():
+        name = row['Location']
+        pos = (row['Latitude'], row['Longitude'])  # (lat, lon)
+        G.add_node(name, pos=pos, type='city')
+
+    for _, row in df_gateways.iterrows():
+        name = row['Location']
+        pos = (row['Latitude'], row['Longitude'])
+        G.add_node(name, pos=pos, type='gateway')
+
+    cities = [n for n, d in G.nodes(data=True) if d['type'] == 'city']
+    for i, city1 in enumerate(cities):
+        pos1 = G.nodes[city1]['pos']
+        distances = []
+        for j, city2 in enumerate(cities):
+            if city1 == city2:
+                continue
+            pos2 = G.nodes[city2]['pos']
+            dist_km = geodesic(pos1, pos2).km
+            if dist_km <= max_km:
+                distances.append((dist_km, city2))
+        distances.sort()
+        for dist, neighbor in distances[:k_nearest]:
+            G.add_edge(city1, neighbor, dist_km=dist)
+
+    gateways = [n for n, d in G.nodes(data=True) if d['type'] == 'gateway']
+    for gateway in gateways:
+        gw_pos = G.nodes[gateway]['pos']
+        distances = []
+        for city in cities:
+            city_pos = G.nodes[city]['pos']
+            dist_km = geodesic(gw_pos, city_pos).km
+            if dist_km <= max_km:
+                distances.append((dist_km, city))
+        distances.sort()
+        for dist, city in distances[:k_nearest]:
+            G.add_edge(gateway, city, dist_km=dist)
+
+    return G
+
+def draw_terrestrial_graph(G, show_labels=False):
+    pos_dict = {node: (data['pos'][1], data['pos'][0])
+                for node, data in G.nodes(data=True)}
+
+    node_types = nx.get_node_attributes(G, 'type')
+    cities = [n for n in G.nodes if node_types[n] == 'city']
+    gateways = [n for n in G.nodes if node_types[n] == 'gateway']
+
+    plt.figure(figsize=(14, 7))
+
+    # edges
+    nx.draw_networkx_edges(G, pos_dict, alpha=0.3)
+
+    # nodes
+    nx.draw_networkx_nodes(G, pos_dict, nodelist=cities, node_color='green',
+                           label='City', node_size=40)
+    nx.draw_networkx_nodes(G, pos_dict, nodelist=gateways, node_color='red',
+                           node_shape='X', label='Gateway', node_size=80)
+
+    if show_labels:
+        nx.draw_networkx_labels(G, pos_dict, font_size=5)
+
+    plt.title("Terrestrial Backbone")
+    plt.axis('off')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 def getShortestPath(source, destination, weight, g):
     '''
