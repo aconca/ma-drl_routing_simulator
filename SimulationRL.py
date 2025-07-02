@@ -30,6 +30,7 @@ from matplotlib.colors import Normalize
 import matplotlib.cm as cm
 
 from geopy.distance import geodesic
+from collections import Counter
 
 ###############################################################################
 ################################    Log file    ###############################
@@ -4460,6 +4461,18 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     graph = createGraph(earth, matching=matching)
     earth.graph = graph
 
+    combined_graph = nx.compose(G, graph) # merge the terrestrial backbone and the leo costellation
+
+    print(f"Total of nodes: {len(combined_graph.nodes)}")
+    print(f"Total of edges: {len(combined_graph.edges)}")
+
+    node_types = Counter(nx.get_node_attributes(combined_graph, 'type').values())
+    print("Types of nodes:", node_types)
+
+    edge_types = Counter(nx.get_edge_attributes(combined_graph, 'type').values())
+    print("Types of edges:", edge_types)
+    print('----------------------------------')
+
     for gt in earth.gateways:
         gt.graph = graph
 
@@ -5117,7 +5130,7 @@ def establishRemainingISLs(earth, g):
         if sat_r.right is None and sat_l.left is None:
             g.add_edge(sat_r.ID, sat_l.ID, slant_range=distance,
                        dataRate=1/shannonRate[Satellites.index(sat_r), Satellites.index(sat_l)],
-                       dataRateOG=shannonRate[Satellites.index(sat_r), Satellites.index(sat_l)], hop=1)
+                       dataRateOG=shannonRate[Satellites.index(sat_r), Satellites.index(sat_l)], hop=1, type = 'ISL')
             sat_r.right = sat_l
             sat_l.left = sat_r
             # print(f"Established horizontal link between {sat_r.ID} (right) and {sat_l.ID} (left) with latitude difference {lat_diff:.2f} deg and distance: {distance/1000:.2F} km.")
@@ -5150,7 +5163,8 @@ def createGraph(earth, matching='Greedy'):
             slant_range = GT.linkedSat[0],          # slant range
             invDataRate = 1/GT.dataRate,            # Inverse of dataRate
             dataRateOG = GT.dataRate,               # original shannon dataRate
-            hop = 1)                                # in case we just want to count hops
+            hop = 1,
+            type = 'GSL')                                # in case we just want to count hops
 
     # add inter-ISL and intra-ISL edges
     ###############################
@@ -5171,7 +5185,8 @@ def createGraph(earth, matching='Greedy'):
         dataRateOG = markovEdge.shannonRate,    # Original shannon datRate
         hop = 1,                                # in case we just want to count hops
         dij = markovEdge.dij,
-        dji = markovEdge.dji)
+        dji = markovEdge.dji,
+        type = 'ISL')
         if firstMove and markovEdge.slant_range > biggestDist:  # keep the biggest possible distance for the normalization of the rewards
             biggestDist = markovEdge.slant_range
 
@@ -5230,7 +5245,7 @@ def build_terrestrial_graph(terrestrial_nodes_csv, gateways_csv, k_nearest=5, ma
                 distances.append((dist_km, city2))
         distances.sort()
         for dist, neighbor in distances[:k_nearest]:
-            G.add_edge(city1, neighbor, dist_km=dist)
+            G.add_edge(city1, neighbor, dist_km=dist, type = 'terrestrial')
 
     gateways = [n for n, d in G.nodes(data=True) if d['type'] == 'gateway']
     for gateway in gateways:
@@ -5243,7 +5258,7 @@ def build_terrestrial_graph(terrestrial_nodes_csv, gateways_csv, k_nearest=5, ma
                 distances.append((dist_km, city))
         distances.sort()
         for dist, city in distances[:k_nearest]:
-            G.add_edge(gateway, city, dist_km=dist)
+            G.add_edge(gateway, city, dist_km=dist, type = 'terrestrial')
 
     return G
 
