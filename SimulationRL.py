@@ -4473,9 +4473,36 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     print("Types of edges:", edge_types)
     print('----------------------------------')
 
+    # creation and distribution of the users around the world based on population map
+    pop_map_for_user_generation = 'Population Map/gpw_v4_population_count_rev11_2020_15_min.tif'
+    img = Image.open(pop_map_for_user_generation).convert('L')
+
+    density_map = np.array(img).astype(float)
+    density_map = density_map / density_map.max()
+
+    users = generate_users_from_density_map(
+        density_map,
+        num_users=2000,
+        seed=42
+    )
+
+    users.to_csv("users_from_density.csv", index=False)
+
+    # plotting the map to ensure that the users are generated accordingly. should be deleted after.
+    plt.figure(figsize=(14, 7))
+    plt.imshow(density_map, extent=[-180, 180, -90, 90], origin='upper', cmap='viridis')
+    plt.scatter(users['Longitude'], users['Latitude'], c='red', s=10, label='Users')
+    plt.colorbar(label='Population Density (arbitrary scale)')
+    plt.xlabel('Longitude')
+    plt.ylabel('Latitude')
+    plt.title('User Distribution Based on Population Density')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
     for gt in earth.gateways:
         gt.graph = graph
-
 
     paths = []
     # make paths for all source destination pairs
@@ -5289,6 +5316,26 @@ def draw_terrestrial_graph(G, show_labels=False):
     plt.legend()
     plt.tight_layout()
     plt.show()
+
+def generate_users_from_density_map(density_map, num_users, seed=None):
+    if seed is not None:
+        np.random.seed(seed)
+
+    density_map = density_map.astype(float)
+    density_map[density_map < 1e-5] = 0  # filter for values that are almost zero
+
+    valid_mask = density_map > 0
+    probs = density_map[valid_mask].flatten()
+    probs /= probs.sum()
+
+    valid_indices = np.argwhere(valid_mask)
+    selected_indices = valid_indices[np.random.choice(len(probs), size=num_users, p=probs)]
+
+    # conversion of lat and long to have a coherent map and user distribution
+    latitudes = (1 - selected_indices[:, 0] / density_map.shape[0]) * 180 - 90
+    longitudes = (selected_indices[:, 1] / density_map.shape[1]) * 360 - 180
+
+    return pd.DataFrame({'Latitude': latitudes, 'Longitude': longitudes})
 
 def getShortestPath(source, destination, weight, g):
     '''
