@@ -143,6 +143,17 @@ balancedFlow= False         # if set to true all the generated traffic at each G
 totalFlow   = 2*1000000000  # Total average flow per GT when the balanced traffc option is enabled. Malaga has 3*, LA has 3*, Nuuk/500
 avUserLoad  = 8593 * 8      # average traffic usage per second in bits
 
+# User to node connection parameters
+f_user       = 3.5e9        # es: 3.5 GHz for 5G
+B_user       = 20e6         # Bandwidth
+maxPtx_user  = 0.2          # Max tx power
+Adtx_user    = 0.05         # antenna tx diameter(m) -> smaller than satellite antennas
+Adrx_user    = 0.2          # antenna rx diameter(m)
+pL_user      = 2.0          # Pointing loss(dB) -> higher for smaller and
+Nf_user      = 7            # Noise figure
+Tn_user      = 300          # Noise Temperature (K)
+min_rate_user= 1e6          # min rate (1 Mbps)
+
 # Block
 BLOCK_SIZE   = 64800
 
@@ -710,6 +721,33 @@ class BlocksForPickle:
         self.totLatency = block.totLatency  # total latency
         self.QPath = block.QPath # path followed due to Q-Learning
 
+class UserLink:
+    def __init__(self, frequency, bandwidth, maxPtx, aDiameterTx, aDiameterRx,
+                 pointingLoss, noiseFigure, noiseTemperature, min_rate):
+        self.f = frequency
+        self.B = bandwidth
+        self.maxPtx = maxPtx
+        self.maxPtx_db = 10 * math.log10(maxPtx)
+        self.Gtx = 10 * math.log10(eff * ((math.pi * aDiameterTx * frequency / Vc) ** 2))
+        self.Grx = 10 * math.log10(eff * ((math.pi * aDiameterRx * frequency / Vc) ** 2))
+        self.G = self.Gtx + self.Grx - 2 * pointingLoss
+        self.No = 10 * math.log10(bandwidth * k) + noiseFigure + 10 * math.log10(
+            290 + (noiseTemperature - 290) * 10 ** (-noiseFigure / 10))
+        self.GoT = self.Grx - noiseFigure - 10 * math.log10(
+            290 + (noiseTemperature - 290) * 10 ** (-noiseFigure / 10))
+        self.min_rate = min_rate
+
+    def __repr__(self):
+        return '\n Carrier frequency = {} GHz\n Bandwidth = {} MHz\n Transmission power = {} W\n Gain per antenna: Tx {}  Rx {}\n Total antenna gain = {} dB\n Noise power = {} dBW\n G/T = {} dB/K'.format(
+            self.f / 1e9,
+            self.B / 1e6,
+            self.maxPtx,
+            '%.2f' % self.Gtx,
+            '%.2f' % self.Grx,
+            '%.2f' % self.G,
+            '%.2f' % self.No,
+            '%.2f' % self.GoT,
+        )
 
 class RFlink:
     def __init__(self, frequency, bandwidth, maxPtx, aDiameterTx, aDiameterRx, pointingLoss, noiseFigure,
