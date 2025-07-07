@@ -1395,6 +1395,224 @@ class DataBlock:
             self.totLatency
         )
 
+class TerrestrialNode:
+    """
+    Class for terrestrial nodes.
+    Each node can be source/destination for traffic and act as a transit point.
+    """
+    def __init__(self, name: str, ID: int, latitude: float, longitude: float, totalX: int, totalY: int, env, earth, graph=None, totalNodes=None):
+        self.name = name
+        self.ID = ID
+        self.earth = earth
+        self.latitude = latitude
+        self.longitude = longitude
+        self.totalNodes = totalNodes
+        self.totalX = totalX
+        self.totalY = totalY
+
+        # Grid position
+        self.gridLocationX = int((0.5 + longitude / 360) * totalX)
+        self.gridLocationY = int((0.5 - latitude / 180) * totalY)
+
+        # Cartesian coordinates
+        self.polar_angle = (math.pi / 2 - math.radians(latitude) + 2 * math.pi) % (2 * math.pi)
+        self.x = Re * math.cos(math.radians(longitude)) * math.sin(self.polar_angle)
+        self.y = Re * math.sin(math.radians(longitude)) * math.sin(self.polar_angle)
+        self.z = Re * math.cos(self.polar_angle)
+
+        # Network structure
+        self.graph = graph
+
+        # User association
+        self.connectedUsers = []  # list of users linked to this node
+
+        # SimPy attributes
+        self.env = env  # simulation environment
+        self.datBlocks = []  # list of outgoing data blocks - one for each destination GT
+        self.fillBlocks = []  # list of simpy processes which fills up the data blocks
+        self.sendBlocks = env.process(self.sendBlock())  # simpy process which sends the data blocks
+        self.sendBuffer = ([env.event()], [])  # queue of blocks that are ready to be sent
+        self.paths = {}  # dictionary for destination: path pairs
+
+        # RF Link toward users (optional simplification)
+        self.usr2node = UserLink(
+            frequency=3.5e9,
+            bandwidth=20e6,
+            maxPtx=0.1,
+            aDiameterTx=0.05,
+            aDiameterRx=0.2,
+            pointingLoss=2.0,
+            noiseFigure=7,
+            noiseTemperature=300,
+            min_rate=1e6
+        )
+
+    # traffic management
+    def makeFillBlockProcesses(self, terrestrial_nodes):
+        """
+        Creates the processes for filling the data blocks and adding them to the send-buffer. A separate process for
+        each destination user is created.
+        """
+        self.totalNodes = len(terrestrial_nodes)
+
+        for node in terrestrial_nodes:
+            if node != self:
+                process = self.env.process(self.fillBlock(node))
+                self.fillBlocks.append(process)
+
+    def fillBlock(self, destination):
+        """
+        Simpy process function:
+        Creates a block headed for a given destination, finds the time for a block to be full and adds the block
+        to the send-buffer after the calculated time.
+        """
+        index = 0
+        unavailableDestinationBuffer = []
+
+        while True:
+            try:
+                # Crea un nuovo blocco da riempire
+                block = DataBlock(self, destination, f"{self.ID}_{destination.ID}_{index}", self.env.now)
+
+                timeToFull = self.timeToFullBlock(block)
+                yield self.env.timeout(timeToFull)  # Attendi fino al riempimento
+
+                # Verifica se esiste un percorso verso la destinazione
+                if destination.name not in self.paths or not self.paths[destination.name]:
+                    unavailableDestinationBuffer.append(block)
+                else:
+                    # Svuota il buffer dei blocchi non consegnabili precedenti
+                    while unavailableDestinationBuffer:
+                        if not self.sendBuffer[0][0].triggered:
+                            self.sendBuffer[0][0].succeed()
+                            self.sendBuffer[1].append(unavailableDestinationBuffer.pop(0))
+                        else:
+                            newEvent = self.env.event().succeed()
+                            self.sendBuffer[0].append(newEvent)
+                            self.sendBuffer[1].append(unavailableDestinationBuffer.pop(0))
+
+                    # Percorso disponibile → assegnalo al blocco
+                    block.path = self.paths[destination.name]
+
+                    if self.earth.pathParam in ['Q-Learning', 'Deep Q-Learning']:
+                        block.QPath = [block.path[0], block.path[1], block.path[-1]]
+
+                    block.timeAtFull = self.env.now
+                    createdBlocks.append(block)
+
+                    # Aggiungi il blocco al buffer di invio
+                    if not self.sendBuffer[0][0].triggered:
+                        self.sendBuffer[0][0].succeed()
+                        self.sendBuffer[1].append(block)
+                    else:
+                        newEvent = self.env.event().succeed()
+                        self.sendBuffer[0].append(newEvent)
+                        self.sendBuffer[1].append(block)
+
+                    index += 1
+
+            except simpy.Interrupt:
+                print(f'Simpy interrupt during fillBlock at node {self.name}')
+                break
+
+
+    # transmission
+    def sendBlock(self):
+        """
+        Simpy process function:
+        Sends data blocks that are filled and ready from the send-buffer.
+
+        This implementation is designed for a terrestrial node and assumes routing
+        is done via a known path (e.g., self.paths[destination.name]).
+
+        No satellite link is assumed in this version.
+        """
+        while True:
+            yield self.sendBuffer[0][0]  # Attendi che ci sia almeno un blocco pronto
+
+            block = self.sendBuffer[1][0]
+
+            if not block.path or len(block.path) < 2:
+                print(f"Invalid or missing path from {self.name} to {block.destination.name}")
+                exit()
+
+            next_hop_name = block.path[1]  # Il prossimo nodo nella path
+            next_hop_node = self.earth.getNodeByName(next_hop_name)
+
+            if next_hop_node is None:
+                print(f"Next hop {next_hop_name} not found in the graph.")
+                exit()
+
+            # Calcola tempo di trasmissione basato su dataRate (assunto costante o predefinito)
+            timeToSend = BLOCK_SIZE / self.dataRate
+
+            block.timeAtFirstTransmission = self.env.now
+            yield self.env.timeout(timeToSend)
+            block.txLatency += timeToSend
+
+            # Avvia il processo di ricezione sul nodo successivo
+            next_hop_node.createReceiveBlockProcess(block)
+
+            # Rimuovi il blocco dal sendBuffer
+            if len(self.sendBuffer[0]) == 1:
+                self.sendBuffer[0].pop(0)
+                self.sendBuffer[1].pop(0)
+                self.sendBuffer[0].append(self.env.event())
+            else:
+                self.sendBuffer[0].pop(0)
+                self.sendBuffer[1].pop(0)
+
+
+    def timeToSend():
+        return BLOCK_SIZE / self.dataRate
+    # receiving
+    def createReceiveBlockProcess(self, block, propTime=0):
+        """
+        Starts a receiveBlock process. For terrestrial nodes we may skip propTime,
+        or set it if needed in future enhancements.
+        """
+        self.env.process(self.receiveBlock(block, propTime))
+
+
+    def receiveBlock(self, block, propTime):
+        """
+        Simpy process function:
+        Waits for propagation delay (if any), and then:
+        - If this node is the destination, stores the block.
+        - Otherwise, forwards it using sendBlock().
+        """
+        yield self.env.timeout(propTime)
+        block.propLatency += propTime
+        block.checkPoints.append(self.env.now)
+
+        if block.destination == self:
+            receivedDataBlocks.append(block)
+        else:
+            # Forward to next node along the path
+            if not block.path or self.name not in block.path:
+                print(f"Path error: {self.name} not in path {block.path}")
+                exit()
+
+            current_index = block.path.index(self.name)
+            if current_index + 1 >= len(block.path):
+                print(f"Cannot forward: {self.name} is last in path for block to {block.destination.name}")
+                exit()
+
+            next_hop_name = block.path[current_index + 1]
+            next_hop_node = self.earth.getNodeByName(next_hop_name)
+
+            if next_hop_node is None:
+                print(f"Next hop {next_hop_name} not found.")
+                exit()
+
+            # Add to next node's sendBuffer
+            if not next_hop_node.sendBuffer[0][0].triggered:
+                next_hop_node.sendBuffer[0][0].succeed()
+                next_hop_node.sendBuffer[1].append(block)
+            else:
+                new_event = next_hop_node.env.event().succeed()
+                next_hop_node.sendBuffer[0].append(new_event)
+                next_hop_node.sendBuffer[1].append(block)
 
 # @profile
 class Gateway:
