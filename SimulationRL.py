@@ -267,6 +267,23 @@ downGSLRates        = []
 interRates          = []
 intraRate           = []
 
+def haversine(coord1, coord2, radius=6371):
+    """
+    Calcola la distanza in km tra due coordinate geografiche (lat, lon).
+    Default Earth radius = 6371 km.
+    """
+    lat1, lon1 = coord1
+    lat2, lon2 = coord2
+
+    # Converti in radianti
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lambda = math.radians(lon2 - lon1)
+
+    a = math.sin(d_phi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    return radius * c
 
 def getBlockTransmissionStats(timeToSim, GTs, constellationType, earth):
     '''
@@ -5505,43 +5522,73 @@ def build_terrestrial_graph(terrestrial_nodes_csv, gateways_csv, k_nearest=5, ma
 
     G = nx.Graph()
 
+    # adding cities
     for _, row in df_cities.iterrows():
         name = row['Location']
-        pos = (row['Latitude'], row['Longitude'])  # (lat, lon)
-        G.add_node(name, pos=pos, type='city')
+        lat = row['Latitude']
+        lon = row['Longitude']
+        G.add_node(name, pos=(lat, lon), latitude=lat, longitude=lon, type='city')
 
+    # adding gateways
     for _, row in df_gateways.iterrows():
         name = row['Location']
-        pos = (row['Latitude'], row['Longitude'])
-        G.add_node(name, pos=pos, type='gateway')
+        lat = row['Latitude']
+        lon = row['Longitude']
+        G.add_node(name, pos=(lat, lon), latitude=lat, longitude=lon, type='gateway')
 
+    # city-city links
     cities = [n for n, d in G.nodes(data=True) if d['type'] == 'city']
-    for i, city1 in enumerate(cities):
+    for city1 in cities:
         pos1 = G.nodes[city1]['pos']
         distances = []
-        for j, city2 in enumerate(cities):
+        for city2 in cities:
             if city1 == city2:
                 continue
             pos2 = G.nodes[city2]['pos']
-            dist_km = geodesic(pos1, pos2).km
+            dist_km = haversine(pos1, pos2)
             if dist_km <= max_km:
                 distances.append((dist_km, city2))
         distances.sort()
         for dist, neighbor in distances[:k_nearest]:
-            G.add_edge(city1, neighbor, dist_km=dist, type = 'terrestrial')
+            G.add_edge(city1, neighbor, dist_km=dist, type='terrestrial', dataRate=1e9)
 
+    # gateway-city links
     gateways = [n for n, d in G.nodes(data=True) if d['type'] == 'gateway']
     for gateway in gateways:
-        gw_pos = G.nodes[gateway]['pos']
+        pos1 = G.nodes[gateway]['pos']
         distances = []
         for city in cities:
-            city_pos = G.nodes[city]['pos']
-            dist_km = geodesic(gw_pos, city_pos).km
+            pos2 = G.nodes[city]['pos']
+            dist_km = haversine(pos1, pos2)
             if dist_km <= max_km:
                 distances.append((dist_km, city))
         distances.sort()
         for dist, city in distances[:k_nearest]:
-            G.add_edge(gateway, city, dist_km=dist, type = 'terrestrial')
+            G.add_edge(gateway, city, dist_km=dist, type='terrestrial', dataRate=1e9)
+
+    # connecting all the disconnected components
+    components = list(nx.connected_components(G))
+    while len(components) > 1:
+        base = components[0]
+        rest = components[1:]
+
+        min_dist = float('inf')
+        best_u, best_v = None, None
+
+        for u in base:
+            pos_u = G.nodes[u]['pos']
+            for comp in rest:
+                for v in comp:
+                    pos_v = G.nodes[v]['pos']
+                    dist = haversine(pos_u, pos_v)
+                    if dist < min_dist:
+                        min_dist = dist
+                        best_u, best_v = u, v
+
+        if best_u and best_v:
+            G.add_edge(best_u, best_v, dist_km=min_dist, type='terrestrial', dataRate=1e9)
+
+        components = list(nx.connected_components(G))
 
     return G
 
