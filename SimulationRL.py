@@ -1417,7 +1417,7 @@ class TerrestrialNode:
     Class for terrestrial nodes.
     Each node can be source/destination for traffic and act as a transit point.
     """
-    def __init__(self, name: str, ID: int, latitude: float, longitude: float, totalX: int, totalY: int, env, earth, graph=None, totalNodes=None):
+    def __init__(self, name: str, ID: int, latitude: float, longitude: float, totalX: int, totalY: int, totalNodes, env, totalLocations, earth, graph=None):
         self.name = name
         self.ID = ID
         self.earth = earth
@@ -2257,7 +2257,7 @@ class Cell:
 # Earth consisting of cells
 # @profile
 class Earth:
-    def __init__(self, env, img_path, gt_path, constellation, inputParams, deltaT, totalLocations, getRates = False, window=None, outputPath='/'):
+    def __init__(self, env, img_path, gt_path, constellation, inputParams, deltaT, totalLocations, getRates = False, window=None, outputPath='/', terrestrial_nodes_path=None):
         # Input the population count data
         # img_path = 'Population Map/gpw_v4_population_count_rev11_2020_15_min.tif'
         self.outputPath = outputPath
@@ -2312,7 +2312,32 @@ class Earth:
         # import gateways from .csv
         self.gateways = []
 
+        # import users from .csv
+        self.terrestrial_nodes = []
+
         gateways = pd.read_csv(gt_path)
+        terrestrial_nodes = pd.read_csv(terrestrial_nodes_path)
+
+        totalLocations = terrestrial_nodes['Location'].tolist()
+
+        for i, row in terrestrial_nodes.iterrows():
+            name = row['Location']
+            lat = row['Latitude']
+            lon = row['Longitude']
+            node = TerrestrialNode(
+                name,
+                i,
+                lat,
+                lon,
+                self.total_x,
+                self.total_y,
+                len(terrestrial_nodes),
+                env,
+                totalLocations,
+                self,
+                graph=None
+            )
+            self.terrestrial_nodes.append(node)
 
         length = 0
         for i, location in enumerate(gateways['Location']):
@@ -4690,7 +4715,7 @@ class ExperienceReplay:
 
 
 # @profile
-def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementTime, totalLocations, outputPath, matching='Greedy'):
+def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementTime, totalLocations, outputPath, matching='Greedy', TerrestrialNodesLocation=None):
     """
     Initializes an instance of the earth with cells from a population map and gateways from a csv file.
     During initialisation, several steps are performed to prepare for simulation:
@@ -4724,7 +4749,18 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
         getRates = False
 
     # Load earth and gateways
-    earth = Earth(env, popMapLocation, GTLocation, constellationType, inputParams, movementTime, totalLocations, getRates, outputPath=outputPath)
+    earth = Earth(
+        env=env,
+        img_path=popMapLocation,
+        gt_path=GTLocation,
+        constellation=constellationType,
+        inputParams=inputParams,
+        deltaT=movementTime,
+        totalLocations=totalLocations,
+        getRates=getRates,
+        outputPath=outputPath,
+        terrestrial_nodes_path=TerrestrialNodesLocation
+    )
 
     print(earth)
     print()
@@ -4760,6 +4796,11 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     )
 
     users.to_csv("users_from_density.csv", index=False)
+
+    associate_users_to_nodes(users, earth.terrestrial_nodes)
+
+    for node in earth.terrestrial_nodes[:50]:
+        print(f"[DEBUG] Nodo {node.name} ha {len(node.connectedUsers)} utenti associati.")
 
     # plotting the map to ensure that the users are generated accordingly. should be deleted after.
     plt.figure(figsize=(14, 7))
@@ -5639,6 +5680,20 @@ def generate_users_from_density_map(density_map, num_users, seed=None):
     longitudes = (selected_indices[:, 1] / density_map.shape[1]) * 360 - 180
 
     return pd.DataFrame({'Latitude': latitudes, 'Longitude': longitudes})
+
+def associate_users_to_nodes(users, terrestrial_nodes):
+    """
+    Associate every generated user to the closest terrestrial node
+    """
+    for _, row in users.iterrows():
+        lat, lon = row['Latitude'], row['Longitude']
+        closest_node = min(
+            terrestrial_nodes,
+            key=lambda node: haversine((lat, lon), (node.latitude, node.longitude))
+        )
+        closest_node.connectedUsers.append((lat, lon))
+
+    print(f"{len(users)} users associated to terrestrial nodes")
 
 def getShortestPath(source, destination, weight, g):
     '''
@@ -7096,7 +7151,7 @@ def RunSimulation(GTs, inputPath, outputPath, populationData, radioKM):
         print(f'Reward for deliver: {ArriveReward}')
         print(f'Stop Loss: {stopLoss}, number of samples considered: {nLosses}, threshold: {lThreshold}')
         print('----------------------------------')
-        earth1, _, _, _ = initialize(env, populationData, inputPath + 'Gateways.csv', radioKM, inputParams, movementTime, locations, outputPath, matching=matching)
+        earth1, _, _, _ = initialize(env, populationData, inputPath + 'Gateways.csv', radioKM, inputParams, movementTime, locations, outputPath, matching=matching, TerrestrialNodesLocation=inputPath + 'TerrestrialNodes.csv')
         earth1.outputPath = outputPath
         
         print('Saving ISLs map...')

@@ -16,7 +16,7 @@ Kumamoto-shi,32.79,130.74
 Takamatsu-shi,34.34,134.04
 Nagaoka,37.45,138.85
 Tottori,35.5,134.23
-Ōita-shi,33.24,131.61
+Oita-shi,33.24,131.61
 Hakodate,41.78,140.74
 Morioka-shi,39.7,141.15
 Kitami,43.8,143.89
@@ -25,29 +25,29 @@ Asahikawa,43.77,142.37
 Yao,34.62,135.6
 Niihama,33.96,133.32
 Sasebo,33.16,129.72
-Kōriyama,37.4,140.38
+Koriyama,37.4,140.38
 Matsue-shi,35.47,133.05
 Nagasaki-shi,32.74,129.87
 Sidon,33.56,35.38
 Port Said,31.26,32.28
 Tripoli,34.44,35.85
-Al Minyā,28.11,30.75
-Al Qurayyāt,31.33,37.34
-Ḩalwān,29.84,31.3
+Al Minya,28.11,30.75
+Al Qurayyat,31.33,37.34
+Halwan,29.84,31.3
 Antalya,36.91,30.7
 Kosti,13.16,32.66
 Turgutlu,38.5,27.7
 Benghazi,32.12,20.13
-Eskişehir,39.78,30.52
-Uşak,38.67,29.41
+Eskisehir,39.78,30.52
+Usak,38.67,29.41
 Konya,37.87,32.48
-Kafr ad Dawwār,31.13,30.13
+Kafr ad Dawwar,31.13,30.13
 Beersheba,31.25,34.79
 Alanya,36.54,32.0
 Deir ez-Zor,35.34,40.14
 Tanda,30.79,31.0
-Adapazarı,40.78,30.4
-Balıkesir,39.65,27.89
+Adapazari,40.78,30.4
+Balikesir,39.65,27.89
 Latakia,35.53,35.79
 Nablus,32.22,35.25
 Ashqelon,31.67,34.57
@@ -55,7 +55,7 @@ Cholula,19.06,-98.3
 Mixco,14.63,-90.61
 Killeen,31.12,-97.73
 Tepic,21.5,-104.89
-Ciudad Guzmán,19.7,-103.46
+Ciudad Guzman,19.7,-103.46
 Ciudad Victoria,23.74,-99.15
 Beaumont,30.09,-94.1
 Ciudad Valles,21.98,-99.02
@@ -67,7 +67,7 @@ Oaxaca,17.07,-96.72
 Tlaquepaque,20.64,-103.29
 Los Mochis,25.79,-108.99
 Victoria de Durango,24.02,-104.66
-Ciudad Acuña,29.32,-100.95
+Ciudad Acuna,29.32,-100.95
 San Antonio,29.42,-98.49
 Monterrey,25.68,-100.32
 Conselheiro Lafaiete,-20.66,-43.79
@@ -88,7 +88,7 @@ Aracatuba,-21.21,-50.43
 Blumenau,-26.92,-49.07
 Catanduva,-21.14,-48.97
 Sao Jose do Rio Preto,-20.82,-49.38
-Ribeirão das Neves,-19.77,-44.09
+Ribeirao das Neves,-19.77,-44.09
 Itabuna,-14.79,-39.28
 Niteroi,-22.88,-43.1
 Parnamirim,-5.92,-35.26
@@ -116,11 +116,11 @@ Xi’an,34.26,108.93
 Tongchuan,35.08,109.09
 Yuxi,24.36,102.54
 Chengdu,30.67,104.07
-Thành Phố Nam Định,20.43,106.18
-Thành Phố Hạ Long,20.95,107.07
+Thanh Pho Nam Dinh,20.43,106.18
+Thanh Pho Ha Long,20.95,107.07
 Tianshui,34.58,105.74
 Gaozhou,21.94,110.85
-Cẩm Phả Mines,21.02,107.3
+Cam Pha Mines,21.02,107.3
 Utrecht,52.09,5.12
 Poole,50.72,-2.0
 Plymouth,50.37,-4.14
@@ -137,7 +137,7 @@ Cheltenham,51.9,-2.08
 Eastbourne,50.77,0.28
 Namur,50.47,4.87
 Bergen,60.39,5.32
-Nîmes,43.83,4.35
+Nimes,43.83,4.35
 Middlesbrough,54.58,-1.23
 Tours,47.38,0.68
 Crawley,51.11,-0.18
@@ -153,7 +153,7 @@ Southampton,50.9,-1.4
 York,53.96,-1.08
 Stavanger,58.97,5.73
 Ipswich,52.06,1.16
-Orléans,47.9,1.9
+Orleans,47.9,1.9
 Wellington,-41.29,174.78
 Tauranga,-37.69,176.17
 Christchurch,-43.53,172.63
@@ -174,7 +174,7 @@ Syktyvkar,61.68,50.81
 Izhevsk,56.85,53.2
 Navoiy Shahri,40.09,65.37
 Solikamsk,59.63,56.77
-Ozërsk,55.76,60.7
+Ozersk,55.76,60.7
 Sterlitamak,53.62,55.95
 Neftekamsk,56.09,54.27
 Zlatoust,55.17,59.65
@@ -214,30 +214,30 @@ Trujillo,-8.12,-79.03
 Manta,-0.96,-80.71
 Ibarra,0.35,-78.12
 Nagda,23.46,75.42
-Bokāro,23.79,85.96
-Batāla,31.82,75.2
+Bokaro,23.79,85.96
+Batala,31.82,75.2
 Vellore,12.92,79.13
 Bijapur,16.82,75.72
 Kotli,33.52,73.92
-Ponnāni,10.77,75.93
+Ponnani,10.77,75.93
 Narayanganj,23.61,90.5
 Malir Cantonment,24.94,67.21
 Gadag,15.43,75.63
 Vejalpur,22.69,73.56
 Ahmadpur East,29.14,71.26
-Jalpāiguri,26.52,88.73
-Kohāt,33.58,71.45
+Jalpaiguri,26.52,88.73
+Kohat,33.58,71.45
 Dhule,20.9,74.78
 Lahore,31.55,74.34
 Cochin,9.94,76.26
 Katihar,25.54,87.57
-Bhiwāni,28.79,76.14
-Dārjiling,27.03,88.27
+Bhiwani,28.79,76.14
+Darjiling,27.03,88.27
 Alandur,13.0,80.21
-Solāpur,17.67,75.91
+Solapur,17.67,75.91
 Male,4.17,73.51
 Roorkee,29.86,77.89
-Gudivāda,16.43,81.0
+Gudivada,16.43,81.0
 Dehradun,30.32,78.03
 General Santos,6.11,125.17
 Kota Kinabalu,5.97,116.07
@@ -265,7 +265,7 @@ Sacramento,38.58,-121.49
 Coquitlam,49.28,-122.75
 Visalia,36.33,-119.29
 Santa Rosa,38.44,-122.71
-San Luis Río Colorado,32.46,-114.77
+San Luis Rio Colorado,32.46,-114.77
 Vancouver,45.64,-122.66
 Mesa,33.42,-111.82
 Valencia,34.44,-118.61
@@ -294,7 +294,7 @@ Riga,56.95,24.11
 Kolpino,59.75,30.59
 Albacete,38.99,-1.86
 El Jadida,33.25,-8.51
-Almería,36.84,-2.46
+Almeria,36.84,-2.46
 Mascara,35.4,0.14
 Cartagena,37.61,-0.99
 Marrakesh,31.63,-8.0
@@ -308,12 +308,12 @@ La Laguna,28.49,-16.32
 Beni Mellal,32.34,-6.35
 Nador,35.17,-2.93
 Terrassa,41.57,2.02
-Gijón,43.54,-5.66
+Gijon,43.54,-5.66
 Khenchela,35.44,7.14
 Huelva,37.27,-6.95
 Marbella,36.52,-4.89
 Oviedo,43.36,-5.84
-Setúbal,38.52,-8.89
+Setubal,38.52,-8.89
 Oujda,34.68,-1.91
 Harare,-17.83,31.05
 Nakuru,-0.28,36.07
@@ -376,7 +376,7 @@ Kingston,44.23,-76.48
 Comodoro Rivadavia,-45.86,-67.5
 San Nicolas de los Arroyos,-33.34,-60.23
 Santa Maria,-29.68,-53.81
-Neuquén,-38.95,-68.06
+Neuquen,-38.95,-68.06
 Puerto Montt,-41.47,-72.94
 Osorno,-40.57,-73.13
 Parana,-31.73,-60.52
@@ -386,26 +386,26 @@ Corrientes,-27.48,-58.83
 Santiago del Estero,-27.8,-64.26
 Antofagasta,-23.65,-70.4
 San Miguel de Tucuman,-26.82,-65.22
-Capiatá,-25.36,-57.45
+Capiata,-25.36,-57.45
 Mestre,45.49,12.24
 Gera,50.88,12.08
 Hannover,52.37,9.73
-Saarbrücken,49.24,6.98
+Saarbrucken,49.24,6.98
 Magdeburg,52.13,11.63
 Ancona,43.6,13.51
 Toulon,43.12,5.93
 Trier,49.76,6.64
-Wrocław,51.1,17.03
+Wroclaw,51.1,17.03
 Bizerte,37.27,9.87
 Oslo,59.91,10.75
 Genova,44.41,8.93
 Aalborg,57.05,9.92
 Mulhouse,47.75,7.33
 Herne,51.54,7.23
-Västerås,59.62,16.55
+Vasteras,59.62,16.55
 Lyon,45.75,4.85
-Forlì,44.22,12.05
-Poznań,52.41,16.93
+Forli,44.22,12.05
+Poznan,52.41,16.93
 Rome,41.89,12.48
 Maastricht,50.85,5.69
 Leipzig,51.34,12.37
@@ -416,9 +416,9 @@ Brno,49.2,16.61
 Gdynia,54.52,18.53
 Wolfsburg,52.42,10.78
 Bergamo,45.7,9.67
-Zielona Góra,51.94,15.51
+Zielona Gora,51.94,15.51
 Freiburg,48.0,7.85
-Wałbrzych,50.77,16.28
+Walbrzych,50.77,16.28
 Salzburg,47.8,13.04
 Kiel,54.32,10.13
 Prato,43.88,11.09
@@ -430,8 +430,8 @@ Cagliari,39.21,9.13
 Bydgoszcz,53.12,18.01
 Marseille,43.3,5.38
 Ferrara,44.83,11.62
-Göteborg,57.71,11.97
-Würzburg,49.79,9.94
+Goteborg,57.71,11.97
+Wurzburg,49.79,9.94
 Bremen,53.08,8.81
 Reggio nell'Emilia,44.7,10.63
 Groningen,53.22,6.57
@@ -473,52 +473,52 @@ Pavlodar,52.27,77.0
 Çorlu,41.16,27.8
 Stara Zagora,42.43,25.64
 Cluj-Napoca,46.77,23.6
-Üsküdar,41.02,29.02
-Rzeszów,50.04,22.0
+UskUdar,41.02,29.02
+Rzeszow,50.04,22.0
 Durres,41.32,19.44
-Târgu-Mureş,46.54,24.56
-Bielsko-Biała,49.82,19.05
+Targu-Mures,46.54,24.56
+Bielsko-Biala,49.82,19.05
 Satu Mare,47.8,22.88
-Thessaloníki,40.64,22.94
+Thessaloniki,40.64,22.94
 Ruse,43.86,25.97
 Lublin,51.25,22.57
 Kaliningrad,54.71,20.51
 Salerno,40.68,14.77
-Košice,48.71,21.26
+Kosice,48.71,21.26
 Arad,46.18,21.32
-Lárisa,39.64,22.42
+Larisa,39.64,22.42
 Szeged,46.25,20.15
-Śródmieście,52.23,21.02
+Srodmiescie,52.23,21.02
 Balti,47.76,27.93
 Banja Luka,44.78,17.19
-Iaşi,47.17,27.6
-Białystok,53.13,23.16
+Iasi,47.17,27.6
+Bialystok,53.13,23.16
 Taranto,40.48,17.23
 Split,43.51,16.44
-Čačak,43.89,20.35
-Pátra,38.24,21.73
+Cacak,43.89,20.35
+Patra,38.24,21.73
 Pristina,42.67,21.17
 Olsztyn,53.78,20.49
 Foggia,41.46,15.55
 Budapest XIV kerület,47.52,19.11
-Buzău,45.15,26.83
+Buzau,45.15,26.83
 Olomouc,49.6,17.25
-Włocławek,52.65,19.07
+Wloclawek,52.65,19.07
 Kumanovo,42.13,21.71
-Râmnicu Vâlcea,45.1,24.37
+Ramnicu Vâlcea,45.1,24.37
 Doha,25.28,51.52
-As Sālimīyah,29.33,48.08
-Najafābād,32.63,51.37
+As Salimiyah,29.33,48.08
+Najafabad,32.63,51.37
 Qazvin,36.27,50.0
 Mecca,21.43,39.83
 Shahr-e Kord,32.33,50.86
-Zāhedān,29.5,60.86
+Zahedan,29.5,60.86
 Buraydah,26.33,43.97
-Gonbad-e Qābūs,37.25,55.17
+Gonbad-e Qabus,37.25,55.17
 Jeddah,21.52,39.22
 Ajman,25.41,55.44
 Al Mubarraz,25.41,49.58
-Şalālah,17.02,54.09
+Salalah,17.02,54.09
 As Sib al Jadidah,23.67,58.19
 Sultanah,24.49,39.59
 Al Jubayl,27.01,49.66
