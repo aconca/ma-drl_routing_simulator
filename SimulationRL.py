@@ -1424,6 +1424,7 @@ class TerrestrialNode:
         self.latitude = latitude
         self.longitude = longitude
         self.totalNodes = totalNodes
+        self.totalLocations = totalLocations
         self.totalX = totalX
         self.totalY = totalY
 
@@ -1630,6 +1631,43 @@ class TerrestrialNode:
                 new_event = next_hop_node.env.event().succeed()
                 next_hop_node.sendBuffer[0].append(new_event)
                 next_hop_node.sendBuffer[1].append(block)
+
+    def timeToFullBlock(self, block):
+        """
+        Calculates the average time it will take to fill up a data block and returns the actual time based on a
+        random variable following an exponential distribution.
+        Different from the non reinforcement version of the simulator, this does not include different methods for
+        setting the fractions of the data generation to each destination gateway.
+        """
+
+        # split the traffic evenly among the active gateways while keeping the fraction to each gateway the same
+        # regardless of number of active gateways
+        flow = self.totalAvgFlow / (len(self.totalLocations) - 1)
+
+        avgTime = block.size / flow  # the average time to fill the buffer in seconds
+
+        time = np.random.exponential(scale=avgTime)  # actual time with randomness
+
+        return time
+
+    def getTotalFlow(self, avgFlowPerUser=1e6, capacity=1e9, fraction=1.0):
+        """
+        Calcola il flusso totale medio generato dagli utenti collegati a questo nodo terrestre,
+        usando la lista di UserLink assegnati.
+        """
+
+        # Conteggia quanti utenti sono collegati a questo nodo
+        num_users = len(self.connectedUsers)
+
+        totalAvgFlow = num_users * avgFlowPerUser
+
+        # Imposta un limite massimo di capacità, se necessario
+        self.totalAvgFlow = min(totalAvgFlow, capacity * fraction)
+
+        if self.totalAvgFlow == 0:
+            self.totalAvgFlow = 1e-6  # piccolo valore positivo per sicurezza
+
+        #print(f"[TerrestrialNode] {self.name}: utenti={num_users}, flusso={self.totalAvgFlow / 1e9:.4f} Gbps")
 
 # @profile
 class Gateway:
@@ -2339,6 +2377,9 @@ class Earth:
             )
             self.terrestrial_nodes.append(node)
 
+        for node in self.terrestrial_nodes:
+            node.getTotalFlow(avgFlowPerUser=5e6, capacity=1e9, fraction=1.0)
+
         length = 0
         for i, location in enumerate(gateways['Location']):
             for name in inputParams['Locations']:
@@ -2369,6 +2410,9 @@ class Earth:
         if not getRates:
             for gt in self.gateways:
                 gt.makeFillBlockProcesses(self.gateways)
+
+        for node in self.terrestrial_nodes:
+            node.makeFillBlockProcesses(self.terrestrial_nodes)
 
         # create constellation of satellites
         self.LEO = create_Constellation(constellation, env, self)
@@ -7220,6 +7264,35 @@ def RunSimulation(GTs, inputPath, outputPath, populationData, radioKM):
         startTime = time.time()
         env.run(simulationTimelimit)
         timeToSim = time.time() - startTime
+
+        # some metrics
+        if not receivedDataBlocks:
+            print("No blocks received. Check links and path")
+        else:
+            total_blocks = len(receivedDataBlocks)
+            total_data_bits = sum(b.size for b in receivedDataBlocks)
+            simulation_time = env.now
+
+            avg_total_latency = np.mean([b.txLatency + b.propLatency for b in receivedDataBlocks])
+            avg_tx_latency = np.mean([b.txLatency for b in receivedDataBlocks])
+            avg_prop_latency = np.mean([b.propLatency for b in receivedDataBlocks])
+
+            throughput_mbps = (total_data_bits / simulation_time) / 1e6
+
+            print("Simulation results:")
+            print(f"Received blocks: {total_blocks}")
+            print(f"Simulation time: {simulation_time:.2f} s")
+            print(f"Average Throughput: {throughput_mbps:.2f} Mbps")
+            print(f"Average total latency: {avg_total_latency:.4f} s")
+            print(f"Transmission: {avg_tx_latency:.4f} s")
+            print(f"Propagation: {avg_prop_latency:.4f} s")
+
+            # optional
+            for b in receivedDataBlocks:
+                print(f"[BLOCK {b.ID}] From {b.source.name} to {b.destination.name} | "
+                      f"Latency: {b.txLatency + b.propLatency:.3f}s | "
+                      f"Tx: {b.txLatency:.3f}s | Prop: {b.propLatency:.3f}s")
+
 
         if testType == "Rates":
             plotRatesFigures()
