@@ -4735,7 +4735,7 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     print("Graph built.")
 
     # checking the network
-    draw_terrestrial_graph(G)
+    #draw_terrestrial_graph(G)
 
     constellationType = inputParams['Constellation'][0]
     fraction = inputParams['Fraction'][0]
@@ -4768,9 +4768,10 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     earth.linkCells2GTs(distance)
     earth.linkSats2GTs("Optimize")
     graph = createGraph(earth, matching=matching)
-    earth.graph = graph
 
     combined_graph = nx.compose(G, graph) # merge the terrestrial backbone and the leo costellation
+
+    earth.graph = combined_graph
 
     print(f"Total of nodes: {len(combined_graph.nodes)}")
     print(f"Total of edges: {len(combined_graph.edges)}")
@@ -4791,7 +4792,7 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
 
     users = generate_users_from_density_map(
         density_map,
-        num_users=2000,
+        num_users=5000,
         seed=42
     )
 
@@ -4799,8 +4800,8 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
 
     associate_users_to_nodes(users, earth.terrestrial_nodes)
 
-    for node in earth.terrestrial_nodes[:50]:
-        print(f"[DEBUG] Nodo {node.name} ha {len(node.connectedUsers)} utenti associati.")
+    # for node in earth.terrestrial_nodes[:50]:
+    #     print(f"[DEBUG] Nodo {node.name} ha {len(node.connectedUsers)} utenti associati.")
 
     # plotting the map to ensure that the users are generated accordingly. should be deleted after.
     plt.figure(figsize=(14, 7))
@@ -4814,6 +4815,18 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     plt.grid(True)
     plt.tight_layout()
     plt.show()
+
+    # example for calculation of shortest path between a src and dst
+    source = "Chuzhou"
+    destination = "Rome"
+    terrestrial_shortest_path = getShortestPathTerrestrial(source, destination, earth.pathParam, G)
+
+    if terrestrial_shortest_path:
+        print(f"Shortest path from {source} to {destination}: {terrestrial_shortest_path}")
+    else:
+        print(f"No path found between {source} and {destination}")
+
+    draw_terrestrial_graph(G, show_labels=False, highlight_path=terrestrial_shortest_path)
 
     for gt in earth.gateways:
         gt.graph = graph
@@ -5633,24 +5646,25 @@ def build_terrestrial_graph(terrestrial_nodes_csv, gateways_csv, k_nearest=5, ma
 
     return G
 
-def draw_terrestrial_graph(G, show_labels=False):
+def draw_terrestrial_graph(G, show_labels=False, highlight_path=None):
     pos_dict = {node: (data['pos'][1], data['pos'][0])
                 for node, data in G.nodes(data=True)}
 
     node_types = nx.get_node_attributes(G, 'type')
-    cities = [n for n in G.nodes if node_types[n] == 'city']
-    gateways = [n for n in G.nodes if node_types[n] == 'gateway']
+    cities = [n for n in G.nodes if node_types.get(n) == 'city']
+    gateways = [n for n in G.nodes if node_types.get(n) == 'gateway']
 
     plt.figure(figsize=(14, 7))
 
-    # edges
     nx.draw_networkx_edges(G, pos_dict, alpha=0.3)
 
-    # nodes
-    nx.draw_networkx_nodes(G, pos_dict, nodelist=cities, node_color='green',
-                           label='City', node_size=40)
-    nx.draw_networkx_nodes(G, pos_dict, nodelist=gateways, node_color='red',
-                           node_shape='X', label='Gateway', node_size=80)
+    # Highlight the path
+    if highlight_path and len(highlight_path) > 1:
+        edge_path = list(zip(highlight_path[:-1], highlight_path[1:]))
+        nx.draw_networkx_edges(G, pos_dict, edgelist=edge_path, edge_color='blue', width=2, label='Shortest Path')
+
+    nx.draw_networkx_nodes(G, pos_dict, nodelist=cities, node_color='green', label='City', node_size=40)
+    nx.draw_networkx_nodes(G, pos_dict, nodelist=gateways, node_color='red', node_shape='X', label='Gateway', node_size=80)
 
     if show_labels:
         nx.draw_networkx_labels(G, pos_dict, font_size=5)
@@ -5726,6 +5740,47 @@ def plotShortestPath(earth, path, outputPath, ID=None, time=None):
     # plt.show()
     plt.close()
 
+def getShortestPathTerrestrial(source, destination, weight, g):
+    try:
+        for node in [source, destination]:
+            if node not in g:
+                raise Exception(f"Node '{node}' not in graph.")
+            if 'latitude' not in g.nodes[node] or 'longitude' not in g.nodes[node]:
+                raise Exception(f"Node '{node}' missing lat/lon.")
+
+        shortest = nx.shortest_path(g, source, destination, weight=weight)
+        return shortest
+
+    except Exception as e:
+        print(f"getShortestPathTerrestrial Caught an exception: {e}")
+        return []
+
+def plot_terrestrial_graph_with_path(graph, path):
+    pos = {node: (graph.data['pos'][1], graph.data['pos'][0]) for node in graph.nodes}
+
+    plt.figure(figsize=(12, 8))
+
+    # Disegna tutto il grafo
+    nx.draw(graph, pos, with_labels=True, node_size=50, node_color='lightgray', edge_color='gray')
+
+    # Evidenzia i nodi del path
+    nx.draw_networkx_nodes(graph, pos,
+                           nodelist=path,
+                           node_color='orange',
+                           node_size=100)
+
+    # Evidenzia gli archi della path
+    path_edges = list(zip(path[:-1], path[1:]))
+    nx.draw_networkx_edges(graph, pos,
+                           edgelist=path_edges,
+                           edge_color='red',
+                           width=2)
+
+    plt.title("Shortest Path in Terrestrial Graph")
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
+    plt.grid(True)
+    plt.show()
 
 def normalize(arr, t_min, t_max):
     norm_arr = []
