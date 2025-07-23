@@ -4834,23 +4834,19 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     density_map = np.array(img).astype(float)
     density_map = density_map / density_map.max()
 
-    users = generate_users_from_density_map(
-        density_map,
-        num_users=5000,
-        seed=42
-    )
+    all_users, active_users = generate_users_from_density_map(density_map, num_users=20000, activation_rate=0.03)
 
-    users.to_csv("users_from_density.csv", index=False)
+    all_users.to_csv("users_from_density.csv", index=False)
 
-    associate_users_to_nodes(users, earth.terrestrial_nodes)
+    associate_users_to_nodes(active_users, earth.terrestrial_nodes) # associate active users to terrestrial nodes based on their location
 
-    # for node in earth.terrestrial_nodes[:50]:
-    #     print(f"[DEBUG] Nodo {node.name} ha {len(node.connectedUsers)} utenti associati.")
+    # for node in earth.terrestrial_nodes[:10]:
+    #     print(f"[DEBUG] Node {node.name} has {len(node.connectedUsers)} users associated.")
 
-    # plotting the map to ensure that the users are generated accordingly. should be deleted after.
+    # plotting the map to ensure that the active users are generated accordingly. should be deleted after.
     plt.figure(figsize=(14, 7))
     plt.imshow(density_map, extent=[-180, 180, -90, 90], origin='upper', cmap='viridis')
-    plt.scatter(users['Longitude'], users['Latitude'], c='red', s=10, label='Users')
+    plt.scatter(active_users['Longitude'], active_users['Latitude'], c='red', s=10, label='Users')
     plt.colorbar(label='Population Density (arbitrary scale)')
     plt.xlabel('Longitude')
     plt.ylabel('Latitude')
@@ -5719,12 +5715,12 @@ def draw_terrestrial_graph(G, show_labels=False, highlight_path=None):
     plt.tight_layout()
     plt.show()
 
-def generate_users_from_density_map(density_map, num_users, seed=None):
+def generate_users_from_density_map(density_map, num_users, activation_rate=0.03, seed=None):
     if seed is not None:
         np.random.seed(seed)
 
     density_map = density_map.astype(float)
-    density_map[density_map < 1e-5] = 0  # filter for values that are almost zero
+    density_map[density_map < 1e-5] = 0
 
     valid_mask = density_map > 0
     probs = density_map[valid_mask].flatten()
@@ -5733,11 +5729,17 @@ def generate_users_from_density_map(density_map, num_users, seed=None):
     valid_indices = np.argwhere(valid_mask)
     selected_indices = valid_indices[np.random.choice(len(probs), size=num_users, p=probs)]
 
-    # conversion of lat and long to have a coherent map and user distribution
     latitudes = (1 - selected_indices[:, 0] / density_map.shape[0]) * 180 - 90
     longitudes = (selected_indices[:, 1] / density_map.shape[1]) * 360 - 180
 
-    return pd.DataFrame({'Latitude': latitudes, 'Longitude': longitudes})
+    all_users = pd.DataFrame({'Latitude': latitudes, 'Longitude': longitudes})
+
+    # Randomly activate a percentage of users
+    num_active = int(len(all_users) * activation_rate)
+    active_indices = np.random.choice(len(all_users), size=num_active, replace=False)
+    active_users = all_users.iloc[active_indices].reset_index(drop=True)
+
+    return all_users, active_users
 
 def associate_users_to_nodes(users, terrestrial_nodes):
     """
