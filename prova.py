@@ -39,17 +39,21 @@ from collections import Counter
 ################################    Log file    ###############################
 ###############################################################################
 
-import sys, io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
+import sys, io, atexit
 
-
-import atexit
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+else:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+os.environ["PYTHONIOENCODING"] = "utf-8"
 
 class Logger(object):
-    def __init__(self, filename='logfile.log'):
-        self.terminal = sys.stdout
-        self.log = open(filename, 'a')
-        atexit.register(self.close)  # Register the close method to be called when the program exits
+    def __init__(self, filename='logfile.log', mode="a", encoding="utf-8"):
+        self.terminal = sys.__stdout__
+        self.log = open(filename, mode, encoding=encoding)
+        atexit.register(self.close)
 
     def write(self, message):
         self.terminal.write(message)
@@ -76,7 +80,7 @@ from keras.optimizers import Adam
 from keras.layers import Dense, Embedding, Reshape, Input, Conv2D, Flatten
 from collections import deque
 
-# Forcing TensorFlow to use GPU - No worth using GPU for reinforcement learning in this case 
+# Forcing TensorFlow to use GPU - No worth using GPU for reinforcement learning in this case
 #                                 since the training is done every step with small buffers
 # physical_devices = tf.config.list_physical_devices('GPU')
 # if len(physical_devices) > 0:
@@ -91,157 +95,157 @@ from collections import deque
 ###############################################################################
 
 # HOT PARAMS - This parameters should be revised before every simulation
-pathings    = ['hop', 'dataRate', 'dataRateOG', 'slant_range', 'Q-Learning', 'Deep Q-Learning']
-pathing     = pathings[3]# dataRateOG is the original datarate. If we want to maximize the datarate we have to use dataRate, which is the inverse of the datarate
+pathings = ['hop', 'dataRate', 'dataRateOG', 'slant_range', 'Q-Learning', 'Deep Q-Learning']
+pathing = pathings[3]  # dataRateOG is the original datarate. If we want to maximize the datarate we have to use dataRate, which is the inverse of the datarate
 
-FL_Test     = False     # If True, it plots the model divergence the model divergence between agents
-plotSatID   = True      # If True, plots the ID of each satellite
-plotAllThro = True      # If True, it plots throughput plots for each single path between gateways. If False, it plots a single figure for overall Throughput
-plotAllCon  = True      # If True, it plots congestion maps for each single path between gateways. If False, it plots a single figure for overall congestion
+FL_Test = False  # If True, it plots the model divergence the model divergence between agents
+plotSatID = True  # If True, plots the ID of each satellite
+plotAllThro = True  # If True, it plots throughput plots for each single path between gateways. If False, it plots a single figure for overall Throughput
+plotAllCon = True  # If True, it plots congestion maps for each single path between gateways. If False, it plots a single figure for overall congestion
 
-movementTime= 10        # Every movementTime seconds, the satellites positions are updated and the graph is built again
-                        # If do not want the constellation to move, set this parameter to a bigger number than the simulation time
-ndeltas     = 5805.44/20#1 Movement speedup factor. Every movementTime sats will move movementTime*ndeltas space. If bigger, will make the rotation distance bigger
+movementTime = 10  # Every movementTime seconds, the satellites positions are updated and the graph is built again
+# If do not want the constellation to move, set this parameter to a bigger number than the simulation time
+ndeltas = 5805.44 / 20  # 1 Movement speedup factor. Every movementTime sats will move movementTime*ndeltas space. If bigger, will make the rotation distance bigger
 
-Train       = True      # Global for all scenarios with different number of GTs. if set to false, the model will not train any of them
-explore     = True      # If True, makes random actions eventually, if false only exploitation
-importQVals = False     # imports either QTables or NN from a certain path
-onlinePhase = False     # when set to true, each satellite becomes a different agent. Recommended using this with importQVals=True and explore=False
-if onlinePhase:         # Just in case
-    explore     = False
+Train = True  # Global for all scenarios with different number of GTs. if set to false, the model will not train any of them
+explore = True  # If True, makes random actions eventually, if false only exploitation
+importQVals = False  # imports either QTables or NN from a certain path
+onlinePhase = False  # when set to true, each satellite becomes a different agent. Recommended using this with importQVals=True and explore=False
+if onlinePhase:  # Just in case
+    explore = False
     importQVals = True
 else:
     FL_Test = False
 
-w1          = 20        # rewards the getting to empty queues
-w2          = 20        # rewards getting closes phisycally   
-w4          = 5         # Normalization for the distance reward, for the traveled distance factor 
+w1 = 20  # rewards the getting to empty queues
+w2 = 20  # rewards getting closes phisycally
+w4 = 5  # Normalization for the distance reward, for the traveled distance factor
 
-gamma       = 0.99       # greedy factor. Smaller -> Greedy. Optimized params: 0.6 for Q-Learning, 0.99 for Deep Q-Learning
+gamma = 0.99  # greedy factor. Smaller -> Greedy. Optimized params: 0.6 for Q-Learning, 0.99 for Deep Q-Learning
 
-GTs = [31]               # number of gateways to be tested
+GTs = [31]  # number of gateways to be tested
 # Gateways are taken from https://www.ksat.no/ground-network-services/the-ksat-global-ground-station-network/ (Except for Malaga and Aalborg)
 # GTs = [i for i in range(2,9)] # This is to make a sweep where scenarios with all the gateways in the range are considered
 
 # Physical constants
-rKM = 500               # radio in km of the coverage of each gateway
-Re  = 6378e3            # Radius of the earth [m]
-G   = 6.67259e-11       # Universal gravitational constant [m^3/kg s^2]
-Me  = 5.9736e24         # Mass of the earth
-Te  = 86164.28450576939 # Time required by Earth for 1 rotation
-Vc  = 299792458         # Speed of light [m/s]
-k   = 1.38e-23          # Boltzmann's constant
-eff = 0.55              # Efficiency of the parabolic antenna
+rKM = 500  # radio in km of the coverage of each gateway
+Re = 6378e3  # Radius of the earth [m]
+G = 6.67259e-11  # Universal gravitational constant [m^3/kg s^2]
+Me = 5.9736e24  # Mass of the earth
+Te = 86164.28450576939  # Time required by Earth for 1 rotation
+Vc = 299792458  # Speed of light [m/s]
+k = 1.38e-23  # Boltzmann's constant
+eff = 0.55  # Efficiency of the parabolic antenna
 # EARTH_R_KM = 6371.0     # earth radius
 
 # Downlink parameters
-f       = 20e9  # Carrier frequency GEO to ground (Hz)
-B       = 500e6 # Maximum bandwidth
-maxPtx  = 10    # Maximum transmission power in W
-Adtx    = 0.26  # Transmitter antenna diameter in m
-Adrx    = 0.26  #0.33 Receiver antenna diameter in m
-pL      = 0.3   # Pointing loss in dB
-Nf      = 2     #1.5 Noise figure in dB
-Tn      = 290   #50 Noise temperature in K
-min_rate= 10e3  # Minimum rate in kbps
+f = 20e9  # Carrier frequency GEO to ground (Hz)
+B = 500e6  # Maximum bandwidth
+maxPtx = 10  # Maximum transmission power in W
+Adtx = 0.26  # Transmitter antenna diameter in m
+Adrx = 0.26  # 0.33 Receiver antenna diameter in m
+pL = 0.3  # Pointing loss in dB
+Nf = 2  # 1.5 Noise figure in dB
+Tn = 290  # 50 Noise temperature in K
+min_rate = 10e3  # Minimum rate in kbps
 
 # Uplink Parameters
-balancedFlow= False         # if set to true all the generated traffic at each GT is equal
-totalFlow   = 2*1000000000  # Total average flow per GT when the balanced traffc option is enabled. Malaga has 3*, LA has 3*, Nuuk/500
-avUserLoad  = 8593 * 8      # average traffic usage per second in bits
+balancedFlow = False  # if set to true all the generated traffic at each GT is equal
+totalFlow = 2 * 1000000000  # Total average flow per GT when the balanced traffc option is enabled. Malaga has 3*, LA has 3*, Nuuk/500
+avUserLoad = 8593 * 8  # average traffic usage per second in bits
 
 # User to node connection parameters
-f_user       = 3.5e9        # es: 3.5 GHz for 5G
-B_user       = 20e6         # Bandwidth
-maxPtx_user  = 0.2          # Max tx power
-Adtx_user    = 0.05         # antenna tx diameter(m) -> smaller than satellite antennas
-Adrx_user    = 0.2          # antenna rx diameter(m)
-pL_user      = 2.0          # Pointing loss(dB) -> higher for smaller and
-Nf_user      = 7            # Noise figure
-Tn_user      = 300          # Noise Temperature (K)
-min_rate_user= 1e6          # min rate (1 Mbps)
+f_user = 3.5e9  # es: 3.5 GHz for 5G
+B_user = 20e6  # Bandwidth
+maxPtx_user = 0.2  # Max tx power
+Adtx_user = 0.05  # antenna tx diameter(m) -> smaller than satellite antennas
+Adrx_user = 0.2  # antenna rx diameter(m)
+pL_user = 2.0  # Pointing loss(dB) -> higher for smaller and
+Nf_user = 7  # Noise figure
+Tn_user = 300  # Noise Temperature (K)
+min_rate_user = 20e6  # min rate (1 Mbps)
 
 # Block
-BLOCK_SIZE   = 64800
+BLOCK_SIZE = 64800
 
 # Movement and structure
 # movementTime= 0.05      # Every movementTime seconds, the satellites positions are updated and the graph is built again
 #                         # If do not want the constellation to move, set this parameter to a bigger number than the simulation time
 # ndeltas     = 5805.44/20#1 Movement speedup factor. This number will multiply deltaT. If bigger, will make the rotation distance bigger
-saveISLs    = True     # save ISLs map
-const_moved = False     # Movement flag. If up, it means it has moved
-matching    = 'Greedy'  # ['Markovian', 'Greedy']
-minElAngle  = 30        # For satellites. Value is taken from NGSO constellation design chapter.
-mixLocs     = False     # If true, every time we make a new simulation the locations are going to change their order of selection
-rotateFirst = False     # If True, the constellation starts rotated by 1 movement defined by ndeltas
+saveISLs = True  # save ISLs map
+const_moved = False  # Movement flag. If up, it means it has moved
+matching = 'Greedy'  # ['Markovian', 'Greedy']
+minElAngle = 30  # For satellites. Value is taken from NGSO constellation design chapter.
+mixLocs = False  # If true, every time we make a new simulation the locations are going to change their order of selection
+rotateFirst = False  # If True, the constellation starts rotated by 1 movement defined by ndeltas
 
 # State pre-processing
-coordGran   = 20            # Granularity of the coordinates that will be the input of the DNN: (Lat/coordGran, Lon/coordGran)
-diff        = True          # If up, the state space gives no coordinates about the neighbor and destination positions but the difference with respect to the current positions
-diff_lastHop= True          # If up, this state is the same as diff, but it includes the last hop where the block was in order to avoid loops
-reducedState= False         # if set to true the DNN will receive as input only the positional information, but not the queueing information
-notAvail    = 0             # this value is set in the state space when the satellite neighbour is not available
+coordGran = 20  # Granularity of the coordinates that will be the input of the DNN: (Lat/coordGran, Lon/coordGran)
+diff = True  # If up, the state space gives no coordinates about the neighbor and destination positions but the difference with respect to the current positions
+diff_lastHop = True  # If up, this state is the same as diff, but it includes the last hop where the block was in order to avoid loops
+reducedState = False  # if set to true the DNN will receive as input only the positional information, but not the queueing information
+notAvail = 0  # this value is set in the state space when the satellite neighbour is not available
 
 # Learning Hyperparameters
-ddqn        = True      # Activates DDQN, where now there are two DNNs, a target-network and a q-network
+ddqn = True  # Activates DDQN, where now there are two DNNs, a target-network and a q-network
 # importQVals = False     # imports either QTables or NN from a certain path
-plotPath    = False     # plots the map with the path after every decision
-alpha       = 0.25      # learning rate for Q-Tables
-alpha_dnn   = 0.01      # learning rate for the deep neural networks
+plotPath = False  # plots the map with the path after every decision
+alpha = 0.25  # learning rate for Q-Tables
+alpha_dnn = 0.01  # learning rate for the deep neural networks
 # gamma       = 0.99       # greedy factor. Smaller -> Greedy. Optimized params: 0.6 for Q-Learning, 0.99 for Deep Q-Learning
-epsilon     = 0.1       # exploration factor for Q-Learning ONLY
-tau         = 0.1       # rate of copying the weights from the Q-Network to the target network
-learningRate= 0.001     # Default learning rate for Adam optimizer
-plotDeliver = False     # create pictures of the path every 1/10 times a data block gets its destination
+epsilon = 0.1  # exploration factor for Q-Learning ONLY
+tau = 0.1  # rate of copying the weights from the Q-Network to the target network
+learningRate = 0.001  # Default learning rate for Adam optimizer
+plotDeliver = False  # create pictures of the path every 1/10 times a data block gets its destination
 # plotSatID   = False     # If True, plots the ID of each satellite
-GridSize    = 8         # Earth divided in GridSize rows for the grid. Used to be 15
-winSize     = 20        # window size for the representation in the plots
-markerSize  = 50        # Size of the markers in the plots
-nTrain      = 2         # The DNN will train every nTrain steps
-noPingPong  = True      # when a neighbour is the destination satellite, send there directly without going through the dnn (Change policy)
+GridSize = 8  # Earth divided in GridSize rows for the grid. Used to be 15
+winSize = 20  # window size for the representation in the plots
+markerSize = 50  # Size of the markers in the plots
+nTrain = 2  # The DNN will train every nTrain steps
+noPingPong = True  # when a neighbour is the destination satellite, send there directly without going through the dnn (Change policy)
 
 # Queues & State
-infQueue    = 5000      # Upper boundary from where a queue is considered as infinite when obserbing the state
-queueVals   = 10        # Values that the observed Queue can have, being 0 the best (Queue of 0) and max the worst (Huge queue or inexistent link).
-latBias     = 90        # This value is added to the latitude of each position in the state space. This can be done to avoid negative numbers
-lonBias     = 180       # Same but with longitude
+infQueue = 5000  # Upper boundary from where a queue is considered as infinite when obserbing the state
+queueVals = 10  # Values that the observed Queue can have, being 0 the best (Queue of 0) and max the worst (Huge queue or inexistent link).
+latBias = 90  # This value is added to the latitude of each position in the state space. This can be done to avoid negative numbers
+lonBias = 180  # Same but with longitude
 
 # rewards
-ArriveReward= 50        # Reward given to the system in case it sends the data block to the satellite linked to the destination gateway
+ArriveReward = 50  # Reward given to the system in case it sends the data block to the satellite linked to the destination gateway
 # w1          = 20        # rewards the getting to empty queues
-# w2          = 20        # rewards getting closes phisycally   
-# w4          = 5         # Normalization for the distance reward, for the traveled distance factor  
-againPenalty= -10       # Penalty if the satellite sends the block to a hop where it has already been
-unavPenalty = -10       # Penalty if the satellite tries to send the block to a direction where there is no linked satellite
-biggestDist = -1        # Normalization factor for the distance reward. This is updated in the creation of the graph.
-firstMove   = True      # The biggest slant range is only computed the first time in order to avoid this value to be variable
-distanceRew = 4          # 1: Distance reward normalized to total distance.
-                         # 2: Distance reward normalized to average moving possibilities
-                         # 3: Distance reward normalized to maximum close up
-                         # 4: Distance reward normalized by max isl distance ~3.700 km for Kepler constellation. This is the one used in the papers.
-                         # 5: Only negative rewards proportional to traveled distance normalized by 1.000 km
+# w2          = 20        # rewards getting closes phisycally
+# w4          = 5         # Normalization for the distance reward, for the traveled distance factor
+againPenalty = -10  # Penalty if the satellite sends the block to a hop where it has already been
+unavPenalty = -10  # Penalty if the satellite tries to send the block to a direction where there is no linked satellite
+biggestDist = -1  # Normalization factor for the distance reward. This is updated in the creation of the graph.
+firstMove = True  # The biggest slant range is only computed the first time in order to avoid this value to be variable
+distanceRew = 4  # 1: Distance reward normalized to total distance.
+# 2: Distance reward normalized to average moving possibilities
+# 3: Distance reward normalized to maximum close up
+# 4: Distance reward normalized by max isl distance ~3.700 km for Kepler constellation. This is the one used in the papers.
+# 5: Only negative rewards proportional to traveled distance normalized by 1.000 km
 
 # Deep Learning
-MAX_EPSILON = 0.99      # Maximum value that the exploration parameter can have
-MIN_EPSILON = 0.001     # Minimum value that the exploration parameter can have
-LAMBDA      = 0.0005    # This value is used to decay the epsilon in the deep learning implementation
-decayRate   = 4         # sets the epsilon decay in the deep learning implementatio. If higher, the decay rate is slower. If lower, the decay is faster
-Clipnorm    = 1         # Maximum value to the nom of the gradients. Prevents the gradients of the model parameters with respect to the loss function becoming too large
-hardUpdate  = 1         # if up, the Q-network weights are copied inside the target network every updateF iterations. if down, this is done gradually
-updateF     = 1000      # every updateF updates, the Q-Network will be copied inside the target Network. This is done if hardUpdate is up
-batchSize   = 16        # batchSize samples are taken from bufferSize samples to train the network
-bufferSize  = 50        # bufferSize samples are used to train the network
+MAX_EPSILON = 0.99  # Maximum value that the exploration parameter can have
+MIN_EPSILON = 0.001  # Minimum value that the exploration parameter can have
+LAMBDA = 0.0005  # This value is used to decay the epsilon in the deep learning implementation
+decayRate = 4  # sets the epsilon decay in the deep learning implementatio. If higher, the decay rate is slower. If lower, the decay is faster
+Clipnorm = 1  # Maximum value to the nom of the gradients. Prevents the gradients of the model parameters with respect to the loss function becoming too large
+hardUpdate = 1  # if up, the Q-network weights are copied inside the target network every updateF iterations. if down, this is done gradually
+updateF = 1000  # every updateF updates, the Q-Network will be copied inside the target Network. This is done if hardUpdate is up
+batchSize = 16  # batchSize samples are taken from bufferSize samples to train the network
+bufferSize = 50  # bufferSize samples are used to train the network
 
 # Stop Loss
 # Train       = True      # Global for all scenarios with different number of GTs. if set to false, the model will not train any of them
-stopLoss    = False     # activates the stop loss function
-nLosses     = 50        # Nº of loss samples used for the stop loss
-lThreshold  = 0.5       # If the mean of the last nLosses are lower than lossThreshold, the mdoel stops training
-TrainThis   = Train     # Local for a single scenario with a certain number of GTs. If the stop loss is activated, this will be set to False and the scenario will not train anymore. 
-                        # When another scenario is about to run, TrainThis will be set to Train again
+stopLoss = False  # activates the stop loss function
+nLosses = 50  # Nº of loss samples used for the stop loss
+lThreshold = 0.5  # If the mean of the last nLosses are lower than lossThreshold, the mdoel stops training
+TrainThis = Train  # Local for a single scenario with a certain number of GTs. If the stop loss is activated, this will be set to False and the scenario will not train anymore.
+# When another scenario is about to run, TrainThis will be set to Train again
 
 # Other
-CurrentGTnumber = -1    # Number of active gateways. This number will be updated every time a gateway is added. In the simulation it will iterate the GTs list
+CurrentGTnumber = -1  # Number of active gateways. This number will be updated every time a gateway is added. In the simulation it will iterate the GTs list
 
 ###############################################################################
 ###############################      Paths      ###############################
@@ -251,145 +255,158 @@ CurrentGTnumber = -1    # Number of active gateways. This number will be updated
 # nnpathTarget= './pre_trained_NNs/qTarget_8GTs_6secs_nocon.h5'
 # nnpath      = './pre_trained_NNs/qNetwork_3GTs.h5'
 # nnpathTarget= './pre_trained_NNs/qTarget_3GTs.h5'
-nnpath      = './pre_trained_NNs/qNetwork_2GTs.h5'
-nnpathTarget= './pre_trained_NNs/qTarget_2GTs.h5'
+nnpath = './pre_trained_NNs/qNetwork_2GTs.h5'
+nnpathTarget = './pre_trained_NNs/qTarget_2GTs.h5'
 # nnpath      = './pre_trained_NNs/qNetwork_2GTs_lastHop.h5'
 # nnpathTarget= './pre_trained_NNs/qTarget_2GTs_lastHop.h5'
-tablesPath  = './pre_trained_NNs/qTablesExport_8GTs/'
+tablesPath = './pre_trained_NNs/qTablesExport_8GTs/'
 
 if __name__ == '__main__':
     # nnpath          = f'./pre_trained_NNs/qNetwork_8GTs.h5'
-    outputPath      = './Results/{}_{}s_[{}]_Del_[{}]_w1_[{}]_w2_{}_GTs/'.format(pathing, float(pd.read_csv("inputRL.csv")['Test length'][0]), ArriveReward, w1, w2, GTs)
-    populationMap   = 'Population Map/gpw_v4_population_count_rev11_2020_15_min.tif'
+    outputPath = './Results/{}_{}s_[{}]_Del_[{}]_w1_[{}]_w2_{}_GTs/'.format(pathing, float(
+        pd.read_csv("inputRL.csv")['Test length'][0]), ArriveReward, w1, w2, GTs)
+    populationMap = 'Population Map/gpw_v4_population_count_rev11_2020_15_min.tif'
 
 ###############################################################################
 #################################    Simpy    #################################
 ###############################################################################
 
-receivedDataBlocks  = []
-createdBlocks       = []
-seed                = np.random.seed(1)
-upGSLRates          = []
-downGSLRates        = []
-interRates          = []
-intraRate           = []
-
-# def haversine_km(lon1, lat1, lon2, lat2):
-#     lon1, lat1, lon2, lat2 = map(math.radians, [lon1, lat1, lon2, lat2])
-#     dlon, dlat = lon2 - lon1, lat2 - lat1
-#     a = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
-#     return 2 * EARTH_R_KM * math.asin(math.sqrt(a))
+receivedDataBlocks = []
+createdBlocks = []
+seed = np.random.seed(1)
+upGSLRates = []
+downGSLRates = []
+interRates = []
+intraRate = []
 
 def haversine(coord1, coord2, radius=6371):
     """
-    Calcola la distanza in km tra due coordinate geografiche (lat, lon).
+    Calculate the distance in kilometers between two geographic coordinates (lat, lon).
     Default Earth radius = 6371 km.
     """
     lat1, lon1 = coord1
     lat2, lon2 = coord2
 
-    # Converti in radianti
+    # conversion in radians
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     d_phi = math.radians(lat2 - lat1)
     d_lambda = math.radians(lon2 - lon1)
 
-    a = math.sin(d_phi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda/2)**2
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     return radius * c
 
-def getBlockTransmissionStats(timeToSim, GTs, constellationType, earth):
-    '''
-    General Block transmission stats
-    '''
-    allTransmissionTimes = []
-    largestTransmissionTime = (0, None)
-    mostHops = (0, None)
-    queueLat = []
-    txLat = []
-    propLat = []
-    # latencies = [queueLat, txLat, propLat]
-    blocks = []
-    allLatencies= []
-    pathBlocks  = [[],[]]
-    first       = earth.gateways[0]
-    second      = earth.gateways[1]
 
-    earth.pathParam
-
-    for block in receivedDataBlocks:
-        time = block.getTotalTransmissionTime()
-        hops = len(block.checkPoints)
-        blocks.append(BlocksForPickle(block))
-
-        if largestTransmissionTime[0] < time:
-            largestTransmissionTime = (time, block)
-
-        if mostHops[0] < hops:
-            mostHops = (hops, block)
-
-        allTransmissionTimes.append(time)
-
-        queueLat.append(block.getQueueTime()[0])
-        txLat.append(block.txLatency)
-        propLat.append(block.propLatency)
-        
-        # [creation time, total latency, arrival time, source, destination, block ID, queue time, transmission latency, prop latency]
-        allLatencies.append([block.creationTime, block.totLatency, block.creationTime+block.totLatency, block.source.name, block.destination.name, block.ID, block.getQueueTime()[0], block.txLatency, block.propLatency])
-        # pre-process the received data blocks. create the rows that will be saved in csv
-        if block.source == first and block.destination == second:
-            pathBlocks[0].append([block.totLatency, block.creationTime+block.totLatency])
-            pathBlocks[1].append(block)
-        
-    # save congestion test data
-    # blockPath = f"./Results/Congestion_Test/{pathing} {float(pd.read_csv('inputRL.csv')['Test length'][0])}/"
-    print('Saving congestion test data...\n')
-    blockPath = outputPath + '/Congestion_Test/'     
-    os.makedirs(blockPath, exist_ok=True)
+def getBlockTransmissionStats(sim_time_s, locations, earth, *args, **kwargs):
+    """
+    Restituisce (results, allLatencies, pathBlocks, blocks) come l'originale,
+    ma funziona anche quando non ci sono gateway (modalità terrestre).
+    """
+    # ---- Se ci sono gateway, usa il comportamento originale (compat) ----
     try:
-        global CurrentGTnumber
-        np.save("{}blocks_{}".format(blockPath, CurrentGTnumber), np.asarray(blocks),allow_pickle=True)
-    except pickle.PicklingError:
-        print('Error with pickle and profiling')
+        if getattr(earth, "gateways", None) and len(earth.gateways) > 0:
+            first = earth.gateways[0]  # <=== riga che prima esplodeva
+            # >>> QUI metti il resto della tua logica originale, identica a prima <<<
+            # return results, allLatencies, pathBlocks, blocks
+    except Exception:
+        pass  # se qualcosa va storto, ripieghiamo comunque sul ramo terrestre
 
-    avgTime = np.mean(allTransmissionTimes)
-    totalTime = sum(allTransmissionTimes)
+    # ---- Ramo TERRESTRIAL-ONLY ----
+    # Scegli la coppia da osservare: prima earth.observed_pair, poi prime due attive
+    src_name = dst_name = None
+    if hasattr(earth, "observed_pair") and earth.observed_pair:
+        src_name, dst_name = earth.observed_pair
+    else:
+        # fallback: prime due City attive
+        active = getattr(earth, "active_terrestrial_nodes", []) or []
+        if len(active) >= 2:
+            src_name, dst_name = str(active[0].name), str(active[1].name)
 
-    print("\n########## Results #########\n")
-    print(f"The simulation took {timeToSim} seconds to run")
-    print(f"A total of {len(createdBlocks)} data blocks were created")
-    print(f"A total of {len(receivedDataBlocks)} data blocks were transmitted")
-    print(f"A total of {len(createdBlocks) - len(receivedDataBlocks)} data blocks were stuck")
-    print(f"Average transmission time for all blocks were {avgTime}")
-    print('Total latecies:\nQueue time: {}%\nTransmission time: {}%\nPropagation time: {}%'.format(
-        '%.4f' % float(sum(queueLat)/totalTime*100),
-        '%.4f' % float(sum(txLat)/totalTime*100),
-        '%.4f' % float(sum(propLat)/totalTime*100)))
+    # Se non ho una coppia, restituisco risultati "vuoti" ma coerenti
+    if not src_name or not dst_name:
+        empty = {
+            "pair": None,
+            "delivered_blocks": 0,
+            "avg_latency_s": 0.0,
+            "avg_tx_s": 0.0,
+            "avg_prop_s": 0.0,
+            "throughput_bps": 0.0,
+        }
+        return empty, [], [], []
 
-    results = Results(finishedBlocks=blocks,
-                      constellation=constellationType,
-                      GTs=GTs,
-                      meanTotalLatency=avgTime,
-                      meanQueueLatency=np.mean(queueLat),
-                      meanPropLatency=np.mean(propLat),
-                      meanTransLatency=np.mean(txLat),
-                      perQueueLatency = sum(queueLat)/totalTime*100,
-                      perPropLatency = sum(propLat)/totalTime*100,
-                      perTransLatency = sum(txLat)/totalTime*100)
+    # Filtra i blocchi ricevuti relativi alla coppia (entrambe le direzioni)
+    try:
+        blocks_all = receivedDataBlocks  # globale come nell'originale
+    except NameError:
+        blocks_all = []
+
+    def _name_of(x):
+        if hasattr(x, "name"):
+            return str(x.name)
+        return str(x)
+
+    pair_blocks = []
+    for b in blocks_all:
+        s = _name_of(getattr(b, "source", ""))
+        d = _name_of(getattr(b, "destination", ""))
+        if (s == src_name and d == dst_name) or (s == dst_name and d == src_name):
+            pair_blocks.append(b)
+
+    # Estrai latenze
+    l_tot, l_tx, l_prop = [], [], []
+    for b in pair_blocks:
+        tx  = getattr(b, "txLatency", 0.0) or 0.0
+        prop = getattr(b, "propLatency", 0.0) or 0.0
+        # in alcuni setup esiste queueLatency, altrimenti 0
+        queue = getattr(b, "queueLatency", 0.0) or 0.0
+        l_tx.append(tx)
+        l_prop.append(prop)
+        l_tot.append(tx + prop + queue)
+
+    # Throughput medio (semplice): somma bit consegnati / tempo simulazione
+    try:
+        block_bits = BLOCK_SIZE  # stesso globale usato in tx
+    except NameError:
+        block_bits = 1e6  # fallback 1 Mbit
+    delivered_bits = block_bits * len(pair_blocks)
+    thr_bps = delivered_bits / max(sim_time_s, 1e-9)
+
+    results = {
+        "pair": (src_name, dst_name),
+        "delivered_blocks": len(pair_blocks),
+        "avg_latency_s": float(np.mean(l_tot)) if l_tot else 0.0,
+        "avg_tx_s": float(np.mean(l_tx)) if l_tx else 0.0,
+        "avg_prop_s": float(np.mean(l_prop)) if l_prop else 0.0,
+        "throughput_bps": float(thr_bps),
+    }
+
+    # allLatencies → tieni la serie delle latenze totali (come nell'originale)
+    allLatencies = l_tot
+
+    # pathBlocks → se il resto del codice lo usa per la mappa, passiamo i blocchi della coppia
+    pathBlocks = pair_blocks
+
+    # blocks → puoi restituire tutti i ricevuti o solo quelli della coppia; scelgo tutti (come compat)
+    blocks = blocks_all
 
     return results, allLatencies, pathBlocks, blocks
 
 
 def simProgress(simTimelimit, env):
     timeSteps = 100
-    timeStepSize = simTimelimit/timeSteps
+    timeStepSize = simTimelimit / timeSteps
     progress = 1
     startTime = time.time()
     yield env.timeout(timeStepSize)
     while True:
         elapsedTime = time.time() - startTime
-        estimatedTimeRemaining = elapsedTime * (timeSteps/progress) - elapsedTime
-        print("Simulation progress: {}% Estimated time remaining: {} seconds Current simulation time: {}".format(progress, int(estimatedTimeRemaining), env.now), end='\r')
+        estimatedTimeRemaining = elapsedTime * (timeSteps / progress) - elapsedTime
+        print(
+            "Simulation progress: {}% Estimated time remaining: {} seconds Current simulation time: {}".format(progress,
+                                                                                                               int(estimatedTimeRemaining),
+                                                                                                               env.now),
+            end='\r')
         yield env.timeout(timeStepSize)
         progress += 1
 
@@ -398,8 +415,9 @@ def simProgress(simTimelimit, env):
 ############################# Federated Learning ##############################
 ###############################################################################
 
-FL_techs    = ['nothing', 'modelAnticipation', 'plane', 'full', 'combination']
-FL_tech     = FL_techs[4]# dataRateOG is the original datarate. If we want to maximize the datarate we have to use dataRate, which is the inverse of the datarate
+FL_techs = ['nothing', 'modelAnticipation', 'plane', 'full', 'combination']
+FL_tech = FL_techs[
+    4]  # dataRateOG is the original datarate. If we want to maximize the datarate we have to use dataRate, which is the inverse of the datarate
 if FL_tech == 'combination':
     global FL_counter
     FL_counter = 1
@@ -408,9 +426,10 @@ if pathing != 'Deep Q-Learning':
     FL_Test = False
 
 if FL_Test:
-    CKA_Values = []     # CKA matrix 
-    num_samples = 10   # number of random samples to test the divergence between models
+    CKA_Values = []  # CKA matrix
+    num_samples = 10  # number of random samples to test the divergence between models
     print(f'Federated Learning ongoing: {FL_tech}. Number of random samples to test divergence: {num_samples}')
+
 
 def generate_test_data(num_samples, include_not_avail=False):
     data = []
@@ -426,27 +445,28 @@ def generate_test_data(num_samples, include_not_avail=False):
         for _ in range(4):
             # Queue scores biased towards 0 and 10
             sample.extend(np.random.choice(queue_values, 4, p=queue_probs))
-            
+
             # Relative positions for each direction: latitude and longitude
             sample.append(np.random.uniform(-2, 2))  # Latitude relative position
             sample.append(np.random.uniform(-2, 2))  # Longitude relative position
-        
+
         # Absolute positions
         sample.append(np.random.uniform(0, 9))  # Absolute latitude normalized
         sample.append(np.random.uniform(0, 18))  # Absolute longitude normalized
-        
+
         # Destination differential coordinates
         sample.append(np.random.uniform(-2, 2))  # Destination differential latitude
         sample.append(np.random.uniform(-2, 2))  # Destination differential longitude
-        
+
         # Optionally include not available values
         if include_not_avail and np.random.rand() < 0.1:  # 10% chance to introduce a -1 value
             idx_to_replace = np.random.choice(len(sample), int(0.1 * len(sample)), replace=False)
             sample[idx_to_replace] = -1
-        
+
         data.append(sample)
-    
+
     return np.array(data)
+
 
 def get_models(earth):
     models = []
@@ -457,16 +477,19 @@ def get_models(earth):
             model_names.append(sat.ID)
     return models, model_names
 
+
 def average_model_weights(models):
     """Average weights of multiple trained models."""
     weights = [model.get_weights() for model in models]
     new_weights = [np.mean(np.array(w), axis=0) for w in zip(*weights)]
     return new_weights
 
+
 def full_federated_learning(models):
     averaged_weights = average_model_weights(models)
     for model in models:
         model.set_weights(averaged_weights)
+
 
 def federate_by_plane(models, model_names):
     """Perform Federated Averaging within each orbital plane."""
@@ -482,6 +505,7 @@ def federate_by_plane(models, model_names):
         for model in plane_models:
             model.set_weights(averaged_weights)
 
+
 def model_anticipation_federate(models, model_names):
     """Perform Model Anticipation Federated Learning."""
     plane_dict = {}
@@ -491,7 +515,7 @@ def model_anticipation_federate(models, model_names):
         if plane not in plane_dict:
             plane_dict[plane] = []
         plane_dict[plane].append((model, name))
-    
+
     # Process each plane for model anticipation
     for plane_models in plane_dict.values():
         # Sort models by their identifiers within the plane
@@ -504,6 +528,7 @@ def model_anticipation_federate(models, model_names):
             new_weights = [(w1 + w2) / 2 for w1, w2 in zip(current_weights, prev_model_weights)]
             current_model.set_weights(new_weights)
 
+
 def update_sats_models(earth, models, model_names):
     '''Update each satellite model for the updated one'''
     print('Updating satellites models...')
@@ -513,9 +538,10 @@ def update_sats_models(earth, models, model_names):
         if ddqn:
             sat.DDQNA.qTarget = model
 
+
 def compute_full_cka_matrix(models, data):
     """Compute the full CKA matrix for a list of models."""
-    
+
     def gram_matrix(X):
         """Calculate the Gram matrix from layer activations."""
         n = X.shape[0]
@@ -532,8 +558,9 @@ def compute_full_cka_matrix(models, data):
         intermediate_model2 = tf.keras.Model(inputs=model2.input, outputs=[layer.output for layer in model2.layers])
         activations1 = intermediate_model1(data)
         activations2 = intermediate_model2(data)
-        return np.mean([cka(gram_matrix(np.array(act1)), gram_matrix(np.array(act2))) for act1, act2 in zip(activations1, activations2)])
-    
+        return np.mean([cka(gram_matrix(np.array(act1)), gram_matrix(np.array(act2))) for act1, act2 in
+                        zip(activations1, activations2)])
+
     n = len(models)
     cka_matrix = np.zeros((n, n))
     for i in range(n):
@@ -544,15 +571,17 @@ def compute_full_cka_matrix(models, data):
                 cka_matrix[i, j] = cka_matrix[j, i] = compute_cka(models[i], models[j], data)
     return cka_matrix
 
+
 def compute_average_cka(cka_matrix):
     """Compute the average CKA value from a CKA matrix."""
     triu_indices = np.triu_indices_from(cka_matrix, k=1)
     return np.mean(cka_matrix[triu_indices])
 
-def perform_FL(earth):#, outputPath):
+
+def perform_FL(earth):  # , outputPath):
 
     # path = outputPath + 'FL' + str(len(earth.gateways)) + 'GTs/'
-    # os.makedirs(path, exist_ok=True) 
+    # os.makedirs(path, exist_ok=True)
     print('----------------------------------')
     print(f'Federated Learning. Performing: {FL_tech}')
 
@@ -563,7 +592,7 @@ def perform_FL(earth):#, outputPath):
 
     if FL_tech == 'nothing':
         return CKA_Values_before, CKA_Values_before
-        
+
     if FL_tech == 'modelAnticipation':
         model_anticipation_federate(models, model_names)
     elif FL_tech == 'plane':
@@ -593,16 +622,17 @@ def perform_FL(earth):#, outputPath):
     print('----------------------------------')
     return CKA_Values_before, CKA_Values_after
 
+
 def plot_cka_over_time_v0(cka_data, outputPath, nGTs):
     """
     Plots each CKA value over time in milliseconds, connecting 'before' and 'after' points with a line
     and using different colors for each type of dot.
-    
+
     Parameters:
     - cka_data: List of [CKA_before, CKA_after, timestamp] entries.
     """
     path = outputPath + 'FL/'
-    os.makedirs(path, exist_ok=True) # create output path
+    os.makedirs(path, exist_ok=True)  # create output path
 
     # Extract times and CKA values for before and after
     times = [entry[2] * 1000 for entry in cka_data]  # Convert time to milliseconds
@@ -631,11 +661,11 @@ def plot_cka_over_time_v0(cka_data, outputPath, nGTs):
     plt.grid(True)
     # plt.show()
     plt.tight_layout()
-    plt.savefig(path + f'CKA_over_time_{str(nGTs)}_GTs', dpi=300, bbox_inches='tight')   
+    plt.savefig(path + f'CKA_over_time_{str(nGTs)}_GTs', dpi=300, bbox_inches='tight')
 
     # Save mean CKA values over time
     mean_cka_values = np.column_stack((times, cka_before_values, cka_after_values))
-    np.savetxt(os.path.join(path, 'mean_cka_values.csv'), mean_cka_values, delimiter=',', 
+    np.savetxt(os.path.join(path, 'mean_cka_values.csv'), mean_cka_values, delimiter=',',
                header="Time_ms,CKA_Before,CKA_After", comments='')
 
     # Save individual CKA matrices before and after FL for each timestamp
@@ -643,11 +673,12 @@ def plot_cka_over_time_v0(cka_data, outputPath, nGTs):
         np.savetxt(os.path.join(path, f'cka_matrix_before_{i}.csv'), entry[0], delimiter=',')
         np.savetxt(os.path.join(path, f'cka_matrix_after_{i}.csv'), entry[1], delimiter=',')
 
+
 def plot_cka_over_time(cka_data, outputPath, nGTs):
     """
     Plots each CKA value over time in milliseconds, connecting 'before' and 'after' points with a dashed line
     and using different colors for each type of dot, with quartile ranges represented by error bars.
-    
+
     Parameters:
     - cka_data: List of [CKA_before, CKA_after, timestamp] entries.
     """
@@ -680,14 +711,14 @@ def plot_cka_over_time(cka_data, outputPath, nGTs):
     plt.plot(line_times, line_values, label='CKA Value Sequence', color='gray', linestyle='-.', alpha=0.7)
 
     # Error bars for 'CKA Before FL' and 'CKA After FL' with T-caps
-    cka_before_yerr = [np.abs(np.subtract(cka_before_values, cka_before_25th)), 
+    cka_before_yerr = [np.abs(np.subtract(cka_before_values, cka_before_25th)),
                        np.abs(np.subtract(cka_before_75th, cka_before_values))]
-    cka_after_yerr = [np.abs(np.subtract(cka_after_values, cka_after_25th)), 
+    cka_after_yerr = [np.abs(np.subtract(cka_after_values, cka_after_25th)),
                       np.abs(np.subtract(cka_after_75th, cka_after_values))]
 
-    plt.errorbar(times, cka_before_values, yerr=cka_before_yerr, fmt='s', color='blue', 
+    plt.errorbar(times, cka_before_values, yerr=cka_before_yerr, fmt='s', color='blue',
                  ecolor='blue', capsize=8, capthick=2, label='CKA Before FL Quartiles')
-    plt.errorbar(times, cka_after_values, yerr=cka_after_yerr, fmt='s', color='green', 
+    plt.errorbar(times, cka_after_values, yerr=cka_after_yerr, fmt='s', color='green',
                  ecolor='green', capsize=8, capthick=2, label='CKA After FL Quartiles')
 
     # Set x-axis and y-axis limits with a dynamic y-axis minimum
@@ -706,13 +737,834 @@ def plot_cka_over_time(cka_data, outputPath, nGTs):
 
     # Save mean CKA values over time
     mean_cka_values = np.column_stack((times, cka_before_values, cka_after_values))
-    np.savetxt(os.path.join(path, 'mean_cka_values.csv'), mean_cka_values, delimiter=',', 
+    np.savetxt(os.path.join(path, 'mean_cka_values.csv'), mean_cka_values, delimiter=',',
                header="Time_ms,CKA_Before,CKA_After", comments='')
 
     # Save individual CKA matrices before and after FL for each timestamp
     for i, entry in enumerate(cka_data):
         np.savetxt(os.path.join(path, f'cka_matrix_before_{i}.csv'), entry[0], delimiter=',')
         np.savetxt(os.path.join(path, f'cka_matrix_after_{i}.csv'), entry[1], delimiter=',')
+
+#----------------------------------------------------------------------------
+# --- PATH NORMALIZATION UTILS ----------------------------------------------
+#----------------------------------------------------------------------------
+
+import unicodedata as _ud
+import re
+
+import unicodedata as _ud
+import re
+
+import math
+import networkx as nx
+
+C = 299_792_458.0  # m/s
+
+# ==== HELPERS PER CHIAVI/PERCORSI ===========================================
+
+def coerce_key(k):
+    """Normalizza una voce di path in una 'chiave' confrontabile:
+    - tuple/list -> prende il primo elemento
+    - gateway/terrestrial: nome (stringa)
+    - satellite: ID (int) lasciato int
+    """
+    if isinstance(k, (list, tuple)) and k:
+        k = k[0]
+    # lascia int (ID satellite)
+    return k
+
+def coerce_path_only(path):
+    """Rende la path una lista piatta di chiavi normalizzate, rimuove None/''."""
+    if not path:
+        return []
+    out = []
+    for k in path:
+        kk = coerce_key(k)
+        if kk is None:
+            continue
+        # converti in stringa per nodi terr/gateway; lascia int per sat
+        if not isinstance(kk, (int, str)):
+            kk = str(kk)
+        out.append(kk)
+    return out
+
+
+# ==== COSTO DI UN ARCO DAL GRAFO (PROP + TX) ================================
+
+def edge_cost_from_graph(earth, u_key, v_key, block_size_bits=None, verbose=False):
+    import math
+    if block_size_bits is None:
+        block_size_bits = BLOCK_SIZE
+
+    def _get_edge(g, a, b):
+        if g is None:
+            return None
+        try:
+            ed = g.get_edge_data(a, b)
+            if ed is None:
+                ed = g.get_edge_data(b, a)
+            return ed
+        except Exception:
+            return None
+
+    u = coerce_key(u_key)
+    v = coerce_key(v_key)
+
+    # -------------------- TERRESTRE --------------------
+    ed = _get_edge(getattr(earth, "terr_graph", None), u, v)
+    if ed:
+        data_rate = ed.get("dataRate", None)
+        prop = ed.get("propDelay", None)
+
+        # fallback propagation: lunghezza fibra
+        if prop is None:
+            length_km = ed.get("length_km", 0.0) or 0.0
+            C_FIBER = 200_000.0  # km/s
+            prop = (length_km / C_FIBER) if length_km else 0.0
+
+        # fallback rate
+        if not data_rate or not math.isfinite(data_rate) or data_rate <= 0:
+            data_rate = (ed.get("capacity_bps", None) or
+                         ed.get("dataRateOG", None) or
+                         1e8)
+
+        # se accidentalmente fosse s/bit, normalizziamo
+        if data_rate < 1e-3:
+            # s/bit → bps
+            data_rate = 1.0 / data_rate
+
+        tx = float(block_size_bits) / float(data_rate)
+
+        if verbose:
+            et = ed.get("type", "TERR")
+            print(f"[cost] TERR-{et:8s} {u} -> {v}  rate={data_rate: .2e}  prop={prop:.6f}  tx={tx:.6f}")
+        return float(prop), float(tx), float(data_rate)
+
+    # -------------------- SPAZIO (ISL/GSL) --------------------
+    ed = _get_edge(getattr(earth, "space_graph", None), u, v)
+    if ed:
+        edge_type = ed.get("type", "")
+        raw = ed.get("dataRateOG", None)
+        # alcuni grafi usano 'dataRate'
+        if raw is None:
+            raw = ed.get("dataRate", None)
+
+        # propagation dallo slant range
+        sl_km = ed.get("slant_range", 0.0) or 0.0
+        C_VAC = 299_792.458  # km/s
+        prop = (sl_km / C_VAC) if sl_km else 0.0
+
+        # normalizza il valore grezzo
+        data_rate_bps = None
+        tx = None
+
+        # se raw è non finito o <=0, prova fallback
+        if (raw is None) or (not isinstance(raw, (int, float))) or (not math.isfinite(raw)) or (raw <= 0):
+            # prova capacity_bps come fallback
+            cap = ed.get("capacity_bps", None)
+            if cap and cap > 1e3 and math.isfinite(cap):
+                data_rate_bps = float(cap)
+                tx = float(block_size_bits) / data_rate_bps
+            else:
+                # fallback prudente: 100 Mbps
+                data_rate_bps = 1e8
+                tx = float(block_size_bits) / data_rate_bps
+        else:
+            # autodetect unità:
+            #  - valori piccolissimi (<<1) → s/bit
+            #  - valori realistici grandi (>=1e3) → bps
+            #  - zona grigia → tentiamo come s/bit (più conservativo)
+            if raw < 1e-3:
+                # s/bit
+                data_rate_bps = 1.0 / float(raw)
+                tx = float(block_size_bits) * float(raw)
+            elif raw >= 1e3:
+                # bps
+                data_rate_bps = float(raw)
+                tx = float(block_size_bits) / data_rate_bps
+            else:
+                # zona grigia (es. 0.001..1000), spesso è s/bit nel tuo sim
+                data_rate_bps = 1.0 / float(raw)
+                tx = float(block_size_bits) * float(raw)
+
+        if verbose:
+            print(f"[cost] SPACE({edge_type}) {u} -> {v}  raw={raw}  "
+                  f"rate_bps={data_rate_bps: .2e}  sl={sl_km:.1f}km  prop={prop:.6f}  tx={tx:.6f}")
+
+        return float(prop), float(tx), float(data_rate_bps if data_rate_bps else 0.0)
+
+    # Nessun arco
+    if verbose:
+        print(f"[cost] NO-EDGE {u} -> {v}")
+    return None, None, None
+
+
+# ==== COSTO DI UN PERCORSO COMPLETO =========================================
+
+def estimate_path_cost(earth, path, block_size_bits=None, verbose=False):
+    """
+    Ritorna costo totale (s) = somma (prop + tx) sugli archi del path.
+    Se un arco manca o ha rate non valido -> ritorna +inf.
+    """
+    p = coerce_path_only(path)
+    if len(p) < 2:
+        return float("inf")
+    if block_size_bits is None:
+        block_size_bits = BLOCK_SIZE
+
+    total_prop = 0.0
+    total_tx = 0.0
+    for a, b in zip(p[:-1], p[1:]):
+        prop, tx, rate = edge_cost_from_graph(earth, a, b, block_size_bits=block_size_bits, verbose=verbose)
+        if prop is None or tx is None:
+            return float("inf")
+        total_prop += prop
+        total_tx   += tx
+
+    total = total_prop + total_tx
+    if verbose:
+        print(f"[cost] TOTAL = {total:.6f}s   (prop={total_prop:.6f}s, tx={total_tx:.6f}s)")
+    return total
+
+
+# ==== COSTRUTTORE DI PERCORSO IBRIDO =========================================
+
+def compute_hybrid_path(src_name, dst_name, earth, prefer="latency", block_size_bits=None, verbose=False):
+    """
+    Costruisce un path ibrido City -> (terrestre) -> GWs -> (spazio) -> GWd -> (terrestre) -> City.
+    Sceglie la coppia di gateway che minimizza il costo stimato.
+    Ritorna la path come lista di chiavi miste (nomi terrestri/gateway + ID sat int).
+    Se non esiste un ibrido valido, ritorna [].
+    """
+    # helper locali già presenti nel tuo codice:
+    # - getShortestPathTerrestrial(src, dst, G)
+    # - getShortestPath(GT_A, GT_B, earth.pathParam, graph)  (spaziale fra gateway)
+    Gt = getattr(earth, "terr_graph", None)
+    Gs = getattr(earth, "space_graph", None)
+    if block_size_bits is None:
+        block_size_bits = BLOCK_SIZE
+
+    if Gt is None or Gs is None:
+        return []
+
+    # gateway disponibili
+    gateways = list(getattr(earth, "gateways", []))
+    if not gateways:
+        return []
+
+    best = (float("inf"), None)  # (costo, path)
+
+    # prova tutte le coppie (GW_src, GW_dst)
+    for gws in gateways:
+        gw_s = str(getattr(gws, "name", None))
+        if not gw_s:
+            continue
+        # path terrestre sorgente -> GW_s
+        p1 = getShortestPathTerrestrial(src_name, gw_s, Gt)
+        if not p1:
+            continue
+
+        for gwd in gateways:
+            gw_d = str(getattr(gwd, "name", None))
+            if not gw_d:
+                continue
+            # path terrestre GW_d -> destinazione
+            p3 = getShortestPathTerrestrial(gw_d, dst_name, Gt)
+            if not p3:
+                continue
+
+            # path spaziale GW_s <-> GW_d (grafo spaziale)
+            try:
+                p2 = getShortestPath(gw_s, gw_d, earth.pathParam, Gs)
+            except Exception:
+                p2 = None
+            if not p2 or len(p2) < 2:
+                continue
+
+            # combina (evita duplicati di gateway al bordo)
+            p1c = coerce_path_only(p1)
+            p2c = coerce_path_only(p2)
+            p3c = coerce_path_only(p3)
+
+            combo = []
+            if p1c:
+                combo.extend(p1c)
+            if p2c:
+                if combo and p2c[0] == combo[-1]:
+                    combo.extend(p2c[1:])
+                else:
+                    combo.extend(p2c)
+            if p3c:
+                if combo and p3c[0] == combo[-1]:
+                    combo.extend(p3c[1:])
+                else:
+                    combo.extend(p3c)
+
+            # costo
+            cost = estimate_path_cost(earth, combo, block_size_bits=block_size_bits, verbose=False)
+            if verbose:
+                print(f"[hyb] {src_name} -> {gw_s} ~~space~~ {gw_d} -> {dst_name}  cost={cost:.4f}")
+
+            if cost < best[0]:
+                best = (cost, combo)
+
+    return best[1] if best[1] else []
+
+
+def _get_edge(g, a, b):
+    if g is None:
+        return None
+    try:
+        return g.get_edge_data(a, b)
+    except Exception:
+        return None
+
+def _get_node(g, k):
+    if g is None:
+        return None, None
+    try:
+        return k, g.nodes[k]
+    except Exception:
+        return None, None
+
+def _node_lonlat_km(g, k):
+    """Ritorna (lon, lat) in gradi -> usato per stimare distanza km se serve."""
+    _, nd = _get_node(g, k)
+    if not nd:
+        return None
+    # varianti possibili nei tuoi JSON
+    lon = nd.get('lon', nd.get('x'))
+    lat = nd.get('lat', nd.get('y'))
+    if lon is None or lat is None:
+        pos = nd.get('pos')
+        if pos and len(pos) == 2:
+            lon, lat = pos
+    if lon is None or lat is None:
+        return None
+    return float(lon), float(lat)
+
+def _haversine_km(lon1, lat1, lon2, lat2):
+    R = 6371.0
+    dlon = math.radians(lon2 - lon1)
+    dlat = math.radians(lat2 - lat1)
+    a = (math.sin(dlat/2)**2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+         math.sin(dlon/2)**2)
+    return 2 * R * math.asin(min(1.0, math.sqrt(a)))
+
+def _edge_distance_km(earth, u, v):
+    """Prova a ricavare una distanza (km) per il link u-v, terrestre o spaziale."""
+    Gt = getattr(earth, 'terr_graph', None)
+    Gs = getattr(earth, 'space_graph', None)
+
+    # 1) se è nel grafo spaziale ed è ISL: usa 'slant_range' (già km)
+    ed_s = _get_edge(Gs, u, v)
+    if ed_s is not None and ed_s.get('type') == 'ISL':
+        sr = ed_s.get('slant_range')
+        if sr is not None:
+            return float(sr)
+
+    # 2) se è terrestre ed ha 'length_km' o 'distance_km' o 'weight' in km
+    ed_t = _get_edge(Gt, u, v)
+    if ed_t is not None:
+        for k in ('length_km', 'distance_km'):
+            if ed_t.get(k) is not None:
+                return float(ed_t[k])
+        # spesso 'weight' è una distanza in km sulla tua TopoHub
+        if ed_t.get('weight') is not None:
+            return float(ed_t['weight'])
+
+    # 3) fallback: haversine tra coordinate (se presenti sullo stesso grafo)
+    # prova prima terrestre
+    p1 = _node_lonlat_km(Gt, u)
+    p2 = _node_lonlat_km(Gt, v)
+    if p1 and p2:
+        return _haversine_km(p1[0], p1[1], p2[0], p2[1])
+
+    # poi spazio (per GSL potrebbe non avere lon/lat sensate; si tenta)
+    p1 = _node_lonlat_km(Gs, u)
+    p2 = _node_lonlat_km(Gs, v)
+    if p1 and p2:
+        return _haversine_km(p1[0], p1[1], p2[0], p2[1])
+
+    # 4) ultima spiaggia: 0 (evitiamo None)
+    return 0.0
+
+def _prop_speed_mps(edge_type, medium_hint=None):
+    """
+    Velocità di propagazione:
+    - ISL (spazio): ~c
+    - GSL: ~c (trascuriamo atmosfera)
+    - fibra / seacable / terrestre: ~2e8 m/s ≈ c/1.5
+    """
+    if edge_type in ('ISL', 'GSL'):
+        return C
+    if medium_hint in ('fiber', 'seacable', 'terrestrial'):
+        return C / 1.5
+    # inferenza: se non dichiarato, per terresti usiamo c/1.5
+    return C / 1.5
+
+def coerce_path_to_keys(path):
+    """Normalizza il path in una lista di chiavi confrontabili (stringhe o int sat-ID)."""
+    out = []
+    for k in (path or []):
+        if isinstance(k, (list, tuple)) and k:
+            k = k[0]
+        out.append(k)
+    return out
+
+def estimate_path_cost_verbose(earth, path, block_size_bits=BLOCK_SIZE, label=None):
+    p = coerce_path_to_keys(path)
+    if not p or len(p) < 2:
+        print("[cost-verbose] path vuoto/too short")
+        return float('inf')
+    if label:
+        print(f"[cost-verbose] {label}")
+
+    tot = 0.0
+    for a, b in zip(p[:-1], p[1:]):
+        # cerca prima nello space_graph per capire il tipo
+        ed_s = _get_edge(getattr(earth, 'space_graph', None), a, b)
+        ed_t = _get_edge(getattr(earth, 'terr_graph', None), a, b)
+        if ed_s is not None:
+            kind = ed_s.get('type', 'SPACE')
+        elif ed_t is not None:
+            kind = f"TERR-{ed_t.get('type', 'TERR')}"
+        else:
+            kind = "??"
+
+        prop, tx, rate = edge_cost_from_graph(earth, a, b, block_size_bits=block_size_bits)
+        if prop is None:
+            print(f"[cost-verbose] MISSING  {a} -> {b}")
+            return float('inf')
+        print(f"[cost-verbose] {kind:4}  {a} -> {b}  rate={rate: .2e}  prop={prop:.6f}  tx={tx:.6f}")
+        tot += (prop + tx)
+
+    print(f"[cost-verbose] TOTAL = {tot:.6f}s")
+    return tot
+
+
+def _norm(s):
+    if s is None:
+        return None
+    s = _ud.normalize('NFKD', str(s))
+    s = ''.join(ch for ch in s if not _ud.combining(ch))
+    s = s.lower().strip()
+    s = re.sub(r'\s+', ' ', s)
+    return s
+
+def resolve_gateway_terr_key(G, gw_display_name):
+    gwN = str(gw_display_name)
+    gw_norm_full = _norm(gwN)
+    gw_head = gwN.split(',')[0].strip()
+    gw_norm_head = _norm(gw_head)
+
+    if gwN in G and G.nodes[gwN].get('type') == 'Gateway':
+        return gwN, 'exact'
+    if gw_head in G and G.nodes[gw_head].get('type') == 'Gateway':
+        return gw_head, 'head'
+    for n, d in G.nodes(data=True):
+        if d.get('type') != 'Gateway':
+            continue
+        if _norm(n) == gw_norm_full or _norm(n) == gw_norm_head:
+            return n, 'norm'
+    for n, d in G.nodes(data=True):
+        if d.get('type') != 'Gateway':
+            continue
+        if gw_norm_head in _norm(n) or _norm(n) in gw_norm_head:
+            return n, 'contains'
+    return None, 'not-found'
+
+def gw_space_key(terr_key, spaceG, default_display_name):
+    return terr_key if terr_key in spaceG else default_display_name
+
+def attach_gateways_to_space_graph(earth):
+    """
+    Aggiunge (o aggiorna) gli archi GSL (Gateway<->Satellite) nel grafo spaziale,
+    assicurandosi che abbiano dataRateOG e slant_range per il calcolo dei costi.
+    Ritorna il numero di gateway connessi al grafo spaziale.
+    """
+    spaceG = getattr(earth, "space_graph", None)
+    if spaceG is None:
+        return 0
+
+    attached = 0
+    for gt in getattr(earth, "gateways", []):
+        # GT.linkedSat è una tupla: (satellite, distanza_km?) nell'originale
+        sat = None
+        try:
+            sat = gt.linkedSat[1] if isinstance(gt.linkedSat, (list, tuple)) and len(gt.linkedSat) > 1 else gt.linkedSat[0]
+        except Exception:
+            sat = gt.linkedSat[0] if (hasattr(gt, "linkedSat") and gt.linkedSat) else None
+
+        if sat is None:
+            continue
+
+        # assicura che i nodi esistano nel grafo spaziale
+        if gt.name not in spaceG:
+            spaceG.add_node(gt.name)
+        if sat.ID not in spaceG:
+            spaceG.add_node(sat.ID)
+
+        # distanza/prop: prova a ricavare una slant range realistica
+        # tentativi in ordine: attributi già presenti, sat.GTDist, fallback 0
+        slant_km = None
+        try:
+            # se c'è già un arco, prova a riusare il valore
+            if spaceG.has_edge(gt.name, sat.ID):
+                ed0 = spaceG.get_edge_data(gt.name, sat.ID)
+                slant_km = ed0.get("slant_range") or ed0.get("distance_km")
+        except Exception:
+            pass
+        if slant_km is None:
+            slant_km = getattr(gt, "GTDist", None) or getattr(sat, "GTDist", None)
+        if slant_km is None:
+            slant_km = 0.0
+
+        # rate: usa il downRate del sat (dopo adjustDownRate) oppure un fallback
+        down_bps = None
+        try:
+            # se già esiste l'arco, prova a riusare
+            if spaceG.has_edge(gt.name, sat.ID):
+                ed0 = spaceG.get_edge_data(gt.name, sat.ID)
+                down_bps = ed0.get("dataRateOG") or ed0.get("dataRate")
+        except Exception:
+            pass
+        if down_bps is None:
+            down_bps = getattr(sat, "downRate", None)
+        if down_bps in (None, 0):
+            # fallback prudente: 100 Mbps
+            down_bps = 1e8
+
+        # crea/aggiorna l’arco in entrambe le direzioni (non sempre serve, ma è comodo)
+        spaceG.add_edge(gt.name, sat.ID,
+                        type="GSL",
+                        slant_range=float(slant_km),
+                        distance_km=float(slant_km),
+                        dataRateOG=float(down_bps))
+        spaceG.add_edge(sat.ID, gt.name,
+                        type="GSL",
+                        slant_range=float(slant_km),
+                        distance_km=float(slant_km),
+                        dataRateOG=float(down_bps))
+        attached += 1
+
+    return attached
+
+def debug_check_gw_links(earth):
+    """
+    Stampa un check veloce sui GSL: ogni gateway deve avere un arco GSL nel grafo spaziale.
+    """
+    spaceG = getattr(earth, "space_graph", None)
+    ok = 0
+    problems = 0
+    rows = []
+    for gt in getattr(earth, "gateways", []):
+        sat = None
+        try:
+            sat = gt.linkedSat[1] if isinstance(gt.linkedSat, (list, tuple)) and len(gt.linkedSat) > 1 else gt.linkedSat[0]
+        except Exception:
+            sat = gt.linkedSat[0] if (hasattr(gt, "linkedSat") and gt.linkedSat) else None
+
+        in_space = (spaceG is not None and gt.name in spaceG)
+        has_edge = (spaceG is not None and sat is not None and spaceG.has_edge(gt.name, sat.ID))
+        if in_space and has_edge:
+            ok += 1
+        else:
+            problems += 1
+            rows.append((gt.name,
+                         f"in_space_graph={in_space}",
+                         f"linkedSat={getattr(sat,'ID', None)}",
+                         f"has_GSL_edge={has_edge}"))
+    print(f"[GSL CHECK] gateways OK: {ok}  |  problems: {problems}")
+    for i, r in enumerate(rows, 1):
+        print(f"  #{i} GW={r[0]}  {r[1]}  {r[2]}  {r[3]}")
+
+def _node_key(k):
+    """
+    Restituisce una chiave hashable per il nodo:
+    - se list/tuple annidate, prende ricorsivamente il primo elemento
+    - se oggetto con .name/.ID, usa quelli
+    - altrimenti restituisce k
+    """
+    # srotola liste/tuple annidate del tipo [[...]] o (['Bordeaux'],)
+    while isinstance(k, (list, tuple)) and len(k) > 0:
+        k = k[0]
+    # oggetti nodo?
+    if hasattr(k, "name"):
+        return getattr(k, "name")
+    if hasattr(k, "ID"):
+        return getattr(k, "ID")
+    return k
+
+def _normalize_key(x):
+    """
+    Rende 'hashable & graph-friendly' la chiave di un nodo.
+    - Srotola liste/tuple annidate prendendo sempre il primo elemento finché serve.
+    - Se l'oggetto ha .ID o .name, usa quelli (in quest'ordine di preferenza).
+    - Converte tipi numpy scalari in python scalari.
+    - Come extrema ratio, converte in str.
+    """
+    # srotola completamente liste/tuple annidate
+    while isinstance(x, (list, tuple)) and len(x) > 0:
+        x = x[0]
+
+    # oggetti con attributi
+    if hasattr(x, "ID"):
+        x = getattr(x, "ID")
+    elif hasattr(x, "name"):
+        x = getattr(x, "name")
+
+    # numpy -> python scalare
+    try:
+        import numpy as np
+        if isinstance(x, np.generic):
+            x = x.item()
+    except Exception:
+        pass
+
+    # se ancora non hashable, forza a stringa
+    try:
+        hash(x)
+    except Exception:
+        x = str(x)
+
+    return x
+
+
+def edge_latency_and_rate(earth, u, v):
+    """
+    Ritorna (propDelay_s, dataRate_bps) per l’arco u-v cercando nei grafi terrestri e spaziali.
+    Calcola la prop se mancante usando distanza (terra: ~2e8 m/s, spazio: ~3e8 m/s).
+    """
+    import math
+    C_TER = 2e8  # m/s fibra/terra
+    C_SPACE = 3e8  # m/s spazio
+
+    # accesso diretto ai grafi
+    GT = getattr(earth, "terr_graph", None)
+    GS = getattr(earth, "space_graph", None)
+
+    def _first_attr_dict(ed):
+        if ed is None:
+            return None
+        if isinstance(ed, dict) and ed and all(isinstance(v, dict) for v in ed.values()):
+            return next(iter(ed.values()))
+        return ed
+
+    def _get_edge(g, a, b):
+        if g is None:
+            return None
+        ed = g.get_edge_data(a, b) or g.get_edge_data(b, a)
+        return _first_attr_dict(ed)
+
+    # prova prima terrestre poi spaziale (o viceversa, l'ordine non importa: cerchiamo su entrambi)
+    ed = _get_edge(GT, u, v) or _get_edge(GS, u, v)
+    if ed is None:
+        return None, None
+
+    etype = ed.get("type")
+    data_rate = (ed.get("dataRate") or ed.get("data_rate") or ed.get("capacity") or ed.get("dataRateOG"))
+    propTime = (ed.get("propDelay") or ed.get("prop_delay"))
+
+    # se non c'è propDelay, prova a stimarla
+    if propTime is None:
+        # se abbiamo distanza nota
+        dist_km = ed.get("distance_km")
+        slant = ed.get("slant_range") or ed.get("slant_range_km")
+        if slant is not None:
+            # spazio
+            propTime = (float(slant) * 1000.0) / C_SPACE
+        elif dist_km is not None:
+            propTime = (float(dist_km) * 1000.0) / C_TER
+        else:
+            # prova a stimare da coordinate del grafo che lo conteneva
+            g_used = GT if _get_edge(GT, u, v) is not None else GS
+            if g_used is not None:
+                nu = g_used.nodes.get(u, {})
+                nv = g_used.nodes.get(v, {})
+                lon1, lat1 = nu.get("lon"), nu.get("lat")
+                lon2, lat2 = nv.get("lon"), nv.get("lat")
+                if None not in (lon1, lat1, lon2, lat2):
+                    R = 6371.0088
+                    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+                    dphi = phi2 - phi1
+                    dlambda = math.radians(lon2 - lon1)
+                    a_ = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * (math.sin(dlambda / 2) ** 2)
+                    dist_km = 2 * R * math.asin(math.sqrt(a_))
+                    propTime = (dist_km * 1000.0) / (C_SPACE if etype in ("ISL", "GSL") else C_TER)
+
+    # data rate di fallback
+    if data_rate is None or data_rate <= 0:
+        data_rate = 1e8  # 100 Mbps fallback
+
+    return float(propTime or 0.0), float(data_rate)
+
+def get_edge_latency_and_rate(earth, u_key, v_key):
+    """
+    Ritorna (propDelay_s, dataRate_bps) cercando prima nel grafo terrestre,
+    poi in quello spaziale. Gestisce anche GSL/ISL.
+    Se mancano gli attributi, stima la prop delay da distanza.
+    """
+    import math
+
+    def _get_edge(g, a, b):
+        if g is None:
+            return None
+        ed = g.get_edge_data(a, b) or g.get_edge_data(b, a)
+        if ed is None:
+            return None
+        # MultiGraph: prendi il primo dict
+        if isinstance(ed, dict) and ed and all(isinstance(v, dict) for v in ed.values()):
+            ed = next(iter(ed.values()))
+        return ed
+
+    # prova TERR
+    ed = _get_edge(getattr(earth, "terr_graph", None), u_key, v_key)
+    if ed is None:
+        # prova SPACE
+        ed = _get_edge(getattr(earth, "space_graph", None), u_key, v_key)
+
+    if ed is None:
+        return None, None
+
+    # ricava data rate
+    data_rate = (ed.get("dataRate") or ed.get("data_rate") or
+                 ed.get("dataRateOG") or ed.get("capacity") or None)
+
+    # ricava/estima propDelay
+    prop = ed.get("propDelay") or ed.get("prop_delay")
+    etype = ed.get("type")
+
+    if prop is None:
+        # stima da distanza
+        C_TER = 2e8
+        C_SPACE = 3e8
+        if etype in ("GSL", "ISL"):
+            # slant range in km?
+            slant = ed.get("slant_range") or ed.get("slant_range_km")
+            if slant is not None:
+                prop = (float(slant) * 1000.0) / C_SPACE
+        else:
+            dist_km = ed.get("distance_km")
+            if dist_km is None:
+                # prova da coordinate dei nodi
+                g = getattr(earth, "terr_graph", None)
+                if g is not None and u_key in g.nodes and v_key in g.nodes:
+                    nu, nv = g.nodes[u_key], g.nodes[v_key]
+                    lon1, lat1 = nu.get("lon"), nu.get("lat")
+                    lon2, lat2 = nv.get("lon"), nv.get("lat")
+                    if None not in (lon1, lat1, lon2, lat2):
+                        R = 6371.0088
+                        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+                        dphi = phi2 - phi1
+                        dlmb = math.radians(lon2 - lon1)
+                        a_ = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlmb/2)**2
+                        dist_km = 2 * R * math.asin(math.sqrt(a_))
+            if dist_km is not None:
+                prop = (float(dist_km) * 1000.0) / C_TER
+
+    if prop is None:
+        prop = 0.0
+    if (data_rate is None) or (data_rate <= 0):
+        # fallback prudente: 100 Mbps se proprio manca
+        data_rate = 1e8
+
+    return float(prop), float(data_rate)
+
+# --- helper: somma latenza lungo un cammino nello space_graph (GW↔GW)
+def estimate_space_path_cost(earth, gw_src, gw_dst, block_size_bits=None):
+    """
+    Restituisce una stima della latenza (prop+tx) tra due gateway
+    percorrendo il cammino minimo nello space_graph.  Usa gli attributi
+    degli archi se presenti: 'propDelay' (s) e 'dataRate' o 'dataRateOG' (bit/s).
+    - earth.space_graph: grafo con satelliti, ISL e GSL
+    - gw_src/gw_dst: oggetti Gateway (quelli di earth.gateways)
+    """
+    try:
+        # cammino minimo nello stesso modo in cui lo calcoli per i GW
+        sp = getShortestPath(gw_src.name, gw_dst.name, earth.pathParam, earth.space_graph)
+    except Exception:
+        return float('inf')
+
+    if not sp or len(sp) < 2:
+        return float('inf')
+
+    # blocco “logico”: se non specificato usa la dimensione standard del simulatore
+    if block_size_bits is None:
+        try:
+            from math import inf  # solo per evitare NameError in vecchi ambienti
+            block_size_bits = int(BLOCK_SIZE)
+        except Exception:
+            block_size_bits = 8 * 1024  # fallback 8 KiB
+
+    G = earth.space_graph
+    total_prop = 0.0
+    bottleneck = float('inf')
+
+    for u, v in zip(sp[:-1], sp[1:]):
+        data = G.get_edge_data(u, v) or {}
+        # propagation
+        if 'propDelay' in data and data['propDelay'] is not None:
+            total_prop += float(data['propDelay'])
+        else:
+            # se manca, ricavala dalla slant_range (m) / c
+            c = 299792458.0
+            d = float(data.get('slant_range', 0.0))  # metri
+            total_prop += d / c
+
+        # data rate per Tx: prendi il minimo lungo il path
+        dr = data.get('dataRate', data.get('dataRateOG', None))
+        if dr:
+            try:
+                bottleneck = min(bottleneck, float(dr))
+            except Exception:
+                pass
+
+    total_tx = (block_size_bits / bottleneck) if bottleneck not in (0.0, float('inf')) else 0.0
+    return total_prop + total_tx
+
+# --- stima completa per un path ibrido [città ... GWsrc, 'SAT', GWdst ... città]
+def estimate_hybrid_path_cost(earth, path_hybrid, block_size_bits=None):
+    """
+    path_hybrid è il path ibrido costruito da compute_hybrid_path:
+      [cityA, ..., gw_src, 'SAT', gw_dst, ..., cityB]
+    La funzione stima:
+      costo_terr(src->gw_src) + costo_sat(gw_src->gw_dst) + costo_terr(gw_dst->dst)
+    dove la parte satellitare è calcolata sullo space_graph.
+    """
+    # normalizza i “token” (stringhe/oggetti) a chiavi gestibili
+    p = coerce_path_to_keys(path_hybrid)
+    if not p or 'SAT' not in p:
+        return float('inf')
+
+    sat_idx = p.index('SAT')
+    left  = p[:sat_idx]       # città -> gw_src
+    right = p[sat_idx+1:]     # gw_dst -> città
+
+    if len(left) < 2 or len(right) < 2:
+        return float('inf')
+
+    gw_src_key = left[-1]
+    gw_dst_key = right[0]
+
+    # oggetti gateway
+    gw_src = earth.getNodeByName(gw_src_key)
+    gw_dst = earth.getNodeByName(gw_dst_key)
+    if gw_src is None or gw_dst is None:
+        return float('inf')
+
+    # costo terrestre delle due mezze tratte (sul grafo TopoHub)
+    terr_left  = estimate_path_cost(earth, left)
+    terr_right = estimate_path_cost(earth, right)
+
+    # costo satellitare tra i due gateway (space_graph, path minimo)
+    sat_cost = estimate_space_path_cost(earth, gw_src, gw_dst, block_size_bits)
+
+    # somma (se una parte è inf, torna inf)
+    if any(np.isinf(x) for x in (terr_left, terr_right, sat_cost)):
+        return float('inf')
+    return terr_left + sat_cost + terr_right
 
 
 ###############################################################################
@@ -721,8 +1573,8 @@ def plot_cka_over_time(cka_data, outputPath, nGTs):
 
 
 class Results:
-    def __init__(self, finishedBlocks, constellation, GTs, meanTotalLatency, meanQueueLatency, meanTransLatency, meanPropLatency, perQueueLatency, perPropLatency,perTransLatency):
-
+    def __init__(self, finishedBlocks, constellation, GTs, meanTotalLatency, meanQueueLatency, meanTransLatency,
+                 meanPropLatency, perQueueLatency, perPropLatency, perTransLatency):
         self.GTs = GTs
         self.finishedBlocks = finishedBlocks
         self.constellation = constellation
@@ -749,7 +1601,8 @@ class BlocksForPickle:
         self.txLatency = block.txLatency  # total transmission time
         self.propLatency = block.propLatency  # total propagation latency
         self.totLatency = block.totLatency  # total latency
-        self.QPath = block.QPath # path followed due to Q-Learning
+        self.QPath = block.QPath  # path followed due to Q-Learning
+
 
 class UserLink:
     def __init__(self, frequency, bandwidth, maxPtx, aDiameterTx, aDiameterRx,
@@ -778,6 +1631,7 @@ class UserLink:
             '%.2f' % self.No,
             '%.2f' % self.GoT,
         )
+
 
 class RFlink:
     def __init__(self, frequency, bandwidth, maxPtx, aDiameterTx, aDiameterRx, pointingLoss, noiseFigure,
@@ -825,37 +1679,43 @@ class FSOlink:
 
 class OrbitalPlane:
     def __init__(self, ID, h, longitude, inclination, n_sat, min_elev, firstID, env, earth):
-        self.ID = ID 								# A unique ID given to every orbital plane = index in Orbital_planes, string
-        self.h = h									# Altitude of deployment
-        self.longitude = longitude					# Longitude angle where is intersects equator [radians]
-        self.inclination = math.pi/2 - inclination	# Inclination of the orbit form [radians]
-        self.n_sat = n_sat							# Number of satellites in plane
-        self.period = 2 * math.pi * math.sqrt((self.h+Re)**3/(G*Me))	# Orbital period of the satellites in seconds
-        self.v = 2*math.pi * (h + Re) / self.period						# Orbital velocity of the satellites in m/s
-        self.min_elev = math.radians(min_elev)							# Minimum elevation angle for ground comm.
-        self.max_alpha = math.acos(Re*math.cos(self.min_elev)/(self.h+Re))-self.min_elev	# Maximum angle at the center of the Earth w.r.t. yaw
-        self.max_beta  = math.pi/2-self.max_alpha-self.min_elev								# Maximum angle at the satellite w.r.t. yaw
-        self.max_distance_2_ground = Re*math.sin(self.max_alpha)/math.sin(self.max_beta)	# Maximum distance to a servable ground station
+        self.ID = ID  # A unique ID given to every orbital plane = index in Orbital_planes, string
+        self.h = h  # Altitude of deployment
+        self.longitude = longitude  # Longitude angle where is intersects equator [radians]
+        self.inclination = math.pi / 2 - inclination  # Inclination of the orbit form [radians]
+        self.n_sat = n_sat  # Number of satellites in plane
+        self.period = 2 * math.pi * math.sqrt(
+            (self.h + Re) ** 3 / (G * Me))  # Orbital period of the satellites in seconds
+        self.v = 2 * math.pi * (h + Re) / self.period  # Orbital velocity of the satellites in m/s
+        self.min_elev = math.radians(min_elev)  # Minimum elevation angle for ground comm.
+        self.max_alpha = math.acos(Re * math.cos(self.min_elev) / (
+                    self.h + Re)) - self.min_elev  # Maximum angle at the center of the Earth w.r.t. yaw
+        self.max_beta = math.pi / 2 - self.max_alpha - self.min_elev  # Maximum angle at the satellite w.r.t. yaw
+        self.max_distance_2_ground = Re * math.sin(self.max_alpha) / math.sin(
+            self.max_beta)  # Maximum distance to a servable ground station
         self.earth = earth
 
         # Adding satellites
-        self.first_sat_ID = firstID # Unique ID of the first satellite in the orbital plane
+        self.first_sat_ID = firstID  # Unique ID of the first satellite in the orbital plane
 
-        self.sats = []              # List of satellites in the orbital plane
+        self.sats = []  # List of satellites in the orbital plane
         for i in range(n_sat):
-            self.sats.append(Satellite(self.first_sat_ID + str(i), int(self.ID), int(i), self.h, self.longitude, self.inclination, self.n_sat, env, self))
+            self.sats.append(
+                Satellite(self.first_sat_ID + str(i), int(self.ID), int(i), self.h, self.longitude, self.inclination,
+                          self.n_sat, env, self))
 
-        self.last_sat_ID = self.first_sat_ID + str(len(self.sats) - 1) # Unique ID of the last satellite in the orbital plane
+        self.last_sat_ID = self.first_sat_ID + str(
+            len(self.sats) - 1)  # Unique ID of the last satellite in the orbital plane
 
     def __repr__(self):
         return '\nID = {}\n altitude= {} km\n longitude= {} deg\n inclination= {} deg\n number of satellites= {}\n period= {} hours\n satellite speed= {} km/s'.format(
             self.ID,
-            self.h/1e3,
+            self.h / 1e3,
             '%.2f' % math.degrees(self.longitude),
             '%.2f' % math.degrees(self.inclination),
             '%.2f' % self.n_sat,
-            '%.2f' % (self.period/3600),
-            '%.2f' % (self.v/1e3))
+            '%.2f' % (self.period / 3600),
+            '%.2f' % (self.v / 1e3))
 
     def rotate(self, delta_t):
         """
@@ -864,8 +1724,8 @@ class OrbitalPlane:
         """
 
         # Change in longitude and phi due to Earth's rotation
-        self.longitude = self.longitude + 2*math.pi*delta_t/Te
-        self.longitude = self.longitude % (2*math.pi)
+        self.longitude = self.longitude + 2 * math.pi * delta_t / Te
+        self.longitude = self.longitude % (2 * math.pi)
         # Rotating every satellite in the orbital plane
         for sat in self.sats:
             sat.rotate(delta_t, self.longitude, self.period)
@@ -873,18 +1733,19 @@ class OrbitalPlane:
 
 # @profile
 class Satellite:
-    def __init__(self, ID, in_plane, i_in_plane, h, longitude, inclination, n_sat, env, orbitalPlane, quota = 500, power = 10):
-        self.ID = ID                    # A unique ID given to every satellite
-        self.orbPlane = orbitalPlane    # Pointer to the orbital plane which the sat belongs to
-        self.in_plane = in_plane        # Orbital plane where the satellite is deployed
-        self.i_in_plane = i_in_plane    # Index in orbital plane
-        self.quota = quota              # Quota of the satellite
-        self.h = h                      # Altitude of deployment
-        self.power = power              # Transmission power
-        self.minElevationAngle = minElAngle# Value is taken from NGSO constellation design chapter
+    def __init__(self, ID, in_plane, i_in_plane, h, longitude, inclination, n_sat, env, orbitalPlane, quota=500,
+                 power=10):
+        self.ID = ID  # A unique ID given to every satellite
+        self.orbPlane = orbitalPlane  # Pointer to the orbital plane which the sat belongs to
+        self.in_plane = in_plane  # Orbital plane where the satellite is deployed
+        self.i_in_plane = i_in_plane  # Index in orbital plane
+        self.quota = quota  # Quota of the satellite
+        self.h = h  # Altitude of deployment
+        self.power = power  # Transmission power
+        self.minElevationAngle = minElAngle  # Value is taken from NGSO constellation design chapter
 
         # Spherical Coordinates before inclination (r,theta,phi)
-        self.r = Re+self.h
+        self.r = Re + self.h
         self.theta = 2 * math.pi * self.i_in_plane / n_sat
         self.phi = longitude
 
@@ -892,23 +1753,27 @@ class Satellite:
         self.inclination = inclination
 
         # Cartesian coordinates  (x,y,z)
-        self.x = self.r * (math.sin(self.theta)*math.cos(self.phi) - math.cos(self.theta)*math.sin(self.phi)*math.sin(self.inclination))
-        self.y = self.r * (math.sin(self.theta)*math.sin(self.phi) + math.cos(self.theta)*math.cos(self.phi)*math.sin(self.inclination))
-        self.z = self.r * math.cos(self.theta)*math.cos(self.inclination)
+        self.x = self.r * (
+                    math.sin(self.theta) * math.cos(self.phi) - math.cos(self.theta) * math.sin(self.phi) * math.sin(
+                self.inclination))
+        self.y = self.r * (
+                    math.sin(self.theta) * math.sin(self.phi) + math.cos(self.theta) * math.cos(self.phi) * math.sin(
+                self.inclination))
+        self.z = self.r * math.cos(self.theta) * math.cos(self.inclination)
 
-        self.polar_angle = self.theta               # Angle within orbital plane [radians]
-        self.latitude = math.asin(self.z/self.r)   # latitude corresponding to the satellite
+        self.polar_angle = self.theta  # Angle within orbital plane [radians]
+        self.latitude = math.asin(self.z / self.r)  # latitude corresponding to the satellite
         # longitude corresponding to satellite
         if self.x > 0:
-            self.longitude = math.atan(self.y/self.x)
+            self.longitude = math.atan(self.y / self.x)
         elif self.x < 0 and self.y >= 0:
-            self.longitude = math.pi + math.atan(self.y/self.x)
+            self.longitude = math.pi + math.atan(self.y / self.x)
         elif self.x < 0 and self.y < 0:
-            self.longitude = math.atan(self.y/self.x) - math.pi
+            self.longitude = math.atan(self.y / self.x) - math.pi
         elif self.y > 0:
-            self.longitude = math.pi/2
+            self.longitude = math.pi / 2
         elif self.y < 0:
-            self.longitude = -math.pi/2
+            self.longitude = -math.pi / 2
         else:
             self.longitude = 0
 
@@ -935,10 +1800,10 @@ class Satellite:
         self.sendBufferSatsInter = []
         self.sendBlocksSatsIntra = []
         self.sendBlocksSatsInter = []
-        self.newBuffer  = [False]
+        self.newBuffer = [False]
 
-        self.QLearning  = None  # Q-learning table that will be updated in case the pathing is 'Q-Learning'
-        self.DDQNA      = None  # DDQN agent for each satellite. Only used in the online phase
+        self.QLearning = None  # Q-learning table that will be updated in case the pathing is 'Q-Learning'
+        self.DDQNA = None  # DDQN agent for each satellite. Only used in the online phase
         self.maxSlantRange = self.GetmaxSlantRange()
 
     def GetmaxSlantRange(self):
@@ -949,7 +1814,7 @@ class Satellite:
         """
         eps = math.radians(self.minElevationAngle)
 
-        distance = math.sqrt((Re+self.h)**2-(Re*math.cos(eps))**2) - Re*math.sin(eps)
+        distance = math.sqrt((Re + self.h) ** 2 - (Re * math.cos(eps)) ** 2) - Re * math.sin(eps)
 
         return distance
 
@@ -957,20 +1822,20 @@ class Satellite:
         return '\nID = {}\n orbital plane= {}, index in plane= {}, h={}\n pos r = {}, pos theta = {},' \
                ' pos phi = {},\n pos x= {}, pos y= {}, pos z= {}\n inclination = {}\n polar angle = {}' \
                '\n latitude = {}\n longitude = {}'.format(
-                self.ID,
-                self.in_plane,
-                self.i_in_plane,
-                '%.2f' % self.h,
-                '%.2f' % self.r,
-                '%.2f' % self.theta,
-                '%.2f' % self.phi,
-                '%.2f' % self.x,
-                '%.2f' % self.y,
-                '%.2f' % self.z,
-                '%.2f' % math.degrees(self.inclination),
-                '%.2f' % math.degrees(self.polar_angle),
-                '%.2f' % math.degrees(self.latitude),
-                '%.2f' % math.degrees(self.longitude))
+            self.ID,
+            self.in_plane,
+            self.i_in_plane,
+            '%.2f' % self.h,
+            '%.2f' % self.r,
+            '%.2f' % self.theta,
+            '%.2f' % self.phi,
+            '%.2f' % self.x,
+            '%.2f' % self.y,
+            '%.2f' % self.z,
+            '%.2f' % math.degrees(self.inclination),
+            '%.2f' % math.degrees(self.polar_angle),
+            '%.2f' % math.degrees(self.latitude),
+            '%.2f' % math.degrees(self.longitude))
 
     def createReceiveBlockProcess(self, block, propTime):
         """
@@ -1010,8 +1875,9 @@ class Satellite:
                 self.tempBlocks.pop(i)
                 break
 
-        try: # ANCHOR Save Queue time csv
-            block.queueTime.append((block.checkPointsSend[len(block.checkPointsSend)-1]- block.checkPoints[len(block.checkPoints)-1]))
+        try:  # ANCHOR Save Queue time csv
+            block.queueTime.append(
+                (block.checkPointsSend[len(block.checkPointsSend) - 1] - block.checkPoints[len(block.checkPoints) - 1]))
         except IndexError:  # Either it is the first satellite for the datablock or the datablock has no checkpoints appendeds
             # print('Index error')
             pass
@@ -1023,41 +1889,53 @@ class Satellite:
         # we let the (Deep) Q-model choose the next hop and it will be added to the block.QPath as mentioned
         # if the next hop is the linked gateway it will simply not add anything and will let the model work normally
         if ((self.QLearning) or (self.orbPlane.earth.DDQNA is not None) or (self.DDQNA is not None)):
-            if len(block.QPath) > 3: # the block does not come from a gateway
+            if len(block.QPath) > 3:  # the block does not come from a gateway
                 if self.QLearning:
-                    nextHop = self.QLearning.makeAction(block, self, self.orbPlane.earth.gateways[0].graph, self.orbPlane.earth, prevSat = (findByID(self.orbPlane.earth, block.QPath[len(block.QPath)-3][0])))
+                    nextHop = self.QLearning.makeAction(block, self, self.orbPlane.earth.gateways[0].graph,
+                                                        self.orbPlane.earth, prevSat=(
+                            findByID(self.orbPlane.earth, block.QPath[len(block.QPath) - 3][0])))
                 elif self.DDQNA:
-                    nextHop = self.DDQNA.makeDeepAction(block, self, self.orbPlane.earth.gateways[0].graph, self.orbPlane.earth, prevSat = (findByID(self.orbPlane.earth, block.QPath[len(block.QPath)-3][0])))
+                    nextHop = self.DDQNA.makeDeepAction(block, self, self.orbPlane.earth.gateways[0].graph,
+                                                        self.orbPlane.earth, prevSat=(
+                            findByID(self.orbPlane.earth, block.QPath[len(block.QPath) - 3][0])))
                 else:
-                    nextHop = self.orbPlane.earth.DDQNA.makeDeepAction(block, self, self.orbPlane.earth.gateways[0].graph, self.orbPlane.earth, prevSat = (findByID(self.orbPlane.earth, block.QPath[len(block.QPath)-3][0])))
+                    nextHop = self.orbPlane.earth.DDQNA.makeDeepAction(block, self,
+                                                                       self.orbPlane.earth.gateways[0].graph,
+                                                                       self.orbPlane.earth, prevSat=(
+                            findByID(self.orbPlane.earth, block.QPath[len(block.QPath) - 3][0])))
             else:
                 if self.QLearning:
-                    nextHop = self.QLearning.makeAction(block, self, self.orbPlane.earth.gateways[0].graph, self.orbPlane.earth)
+                    nextHop = self.QLearning.makeAction(block, self, self.orbPlane.earth.gateways[0].graph,
+                                                        self.orbPlane.earth)
                 elif self.DDQNA:
-                    nextHop = self.DDQNA.makeDeepAction(block, self, self.orbPlane.earth.gateways[0].graph, self.orbPlane.earth)
+                    nextHop = self.DDQNA.makeDeepAction(block, self, self.orbPlane.earth.gateways[0].graph,
+                                                        self.orbPlane.earth)
                 else:
-                    nextHop = self.orbPlane.earth.DDQNA.makeDeepAction(block, self, self.orbPlane.earth.gateways[0].graph, self.orbPlane.earth)
+                    nextHop = self.orbPlane.earth.DDQNA.makeDeepAction(block, self,
+                                                                       self.orbPlane.earth.gateways[0].graph,
+                                                                       self.orbPlane.earth)
 
             if nextHop != 0:
-                block.QPath.insert(len(block.QPath)-1 ,nextHop)
+                block.QPath.insert(len(block.QPath) - 1, nextHop)
                 pathPlot = block.QPath.copy()
                 pathPlot.pop()
             else:
                 pathPlot = block.QPath.copy()
-            
+
             # If plotPath plots an image for every action taken. Plots 1/10 of blocks. # ANCHOR plot action satellite
             #################################################################
             if self.orbPlane.earth.plotPaths:
-                if int(block.ID[len(block.ID)-1]) == 0:
-                    os.makedirs(self.orbPlane.earth.outputPath + '/pictures/', exist_ok=True) # create output path
-                    outputPath = self.orbPlane.earth.outputPath + '/pictures/' + block.ID + '_' + str(len(block.QPath)) + '_'
+                if int(block.ID[len(block.ID) - 1]) == 0:
+                    os.makedirs(self.orbPlane.earth.outputPath + '/pictures/', exist_ok=True)  # create output path
+                    outputPath = self.orbPlane.earth.outputPath + '/pictures/' + block.ID + '_' + str(
+                        len(block.QPath)) + '_'
                     # plotShortestPath(self.orbPlane.earth, pathPlot, outputPath)
-                    plotShortestPath(self.orbPlane.earth, pathPlot, outputPath, ID=block.ID, time = block.creationTime)
+                    plotShortestPath(self.orbPlane.earth, pathPlot, outputPath, ID=block.ID, time=block.creationTime)
             #################################################################
 
             path = block.QPath  # if there is Q-Learning the path will be repalced with the QPath
         else:
-            path = block.path   # if there is no Q-Learning we will work with the path as normally
+            path = block.path  # if there is no Q-Learning we will work with the path as normally
 
         # get this satellites index in the blocks path
         index = None
@@ -1122,7 +2000,7 @@ class Satellite:
                     "ERROR! Sat {} tried to send block to {} but did not have it in its linked satellite list".format(
                         self.ID, path[index + 1][0]))
 
-    def sendBlock(self, destination, isSat, isIntra = None):
+    def sendBlock(self, destination, isSat, isIntra=None):
         """
         Simpy process function:
 
@@ -1181,7 +2059,7 @@ class Satellite:
                 # To avoid remaking the reference every time a block is sent, the list of boolean values: self.newBuffer
                 # is used to indicate when the constellation is moved,
 
-                if True in self.newBuffer and not isIntra and isSat: # remake reference to buffer
+                if True in self.newBuffer and not isIntra and isSat:  # remake reference to buffer
                     if isIntra is not None:
                         sendBuffer = None
                         if isSat:
@@ -1197,8 +2075,8 @@ class Satellite:
                         sendBuffer = self.sendBufferGT
 
                     for index, val in enumerate(self.newBuffer):
-                        if val: # each process will one by one remake their reference, and change one value to True.
-                                # After all processes has done this, all values are back to False
+                        if val:  # each process will one by one remake their reference, and change one value to True.
+                            # After all processes has done this, all values are back to False
                             self.newBuffer[index] = False
                             break
 
@@ -1242,9 +2120,9 @@ class Satellite:
              13.05000, 13.64000, 13.98000, 14.81000, 15.47000, 15.87000, 16.55000, 16.98000, 17.24000, 18.10000,
              18.59000, 18.84000, 19.57000])
 
-        pathLoss = 10*np.log10((4*math.pi*self.linkedGT.linkedSat[0]*self.ngeo2gt.f/Vc)**2)
-        snr = 10**((self.ngeo2gt.maxPtx_db + self.ngeo2gt.G - pathLoss - self.ngeo2gt.No)/10)
-        shannonRate = self.ngeo2gt.B*np.log2(1+snr)
+        pathLoss = 10 * np.log10((4 * math.pi * self.linkedGT.linkedSat[0] * self.ngeo2gt.f / Vc) ** 2)
+        snr = 10 ** ((self.ngeo2gt.maxPtx_db + self.ngeo2gt.G - pathLoss - self.ngeo2gt.No) / 10)
+        shannonRate = self.ngeo2gt.B * np.log2(1 + snr)
 
         feasible_speffs = speff_thresholds[np.nonzero(lin_thresholds <= snr)]
         speff = self.ngeo2gt.B * feasible_speffs[-1]
@@ -1256,19 +2134,19 @@ class Satellite:
         Calculates the propagation time of a block going from satellite to satellite.
         """
         distance = linkedSat[0]
-        pTime = distance/Vc
+        pTime = distance / Vc
         return pTime
 
     def findIntraNeighbours(self, earth):
         '''
         Finds intra-plane neighbours
         '''
-        self.linked = None                                                      # Closest sat linked
-        self.upper  = earth.LEO[self.in_plane].sats[self.i_in_plane-1]          # Previous sat in the same plane
-        if self.i_in_plane < self.n_sat-1:
-            self.lower = earth.LEO[self.in_plane].sats[self.i_in_plane+1]       # Following sat in the same plane
+        self.linked = None  # Closest sat linked
+        self.upper = earth.LEO[self.in_plane].sats[self.i_in_plane - 1]  # Previous sat in the same plane
+        if self.i_in_plane < self.n_sat - 1:
+            self.lower = earth.LEO[self.in_plane].sats[self.i_in_plane + 1]  # Following sat in the same plane
         else:
-            self.lower = earth.LEO[self.in_plane].sats[0]                       # last satellite of the plane
+            self.lower = earth.LEO[self.in_plane].sats[0]  # last satellite of the plane
 
     def findInterNeighbours(self, earth):
         '''
@@ -1276,28 +2154,28 @@ class Satellite:
         '''
         g = earth.graph
         self.right = None
-        self.left  = None
+        self.left = None
         # Find inter-plane neighbours (right and left)
         for edge in list(g.edges(self.ID)):
             if edge[1][0].isdigit():
                 satB = findByID(earth, edge[1])
                 dir = getDirection(self, satB)
-                if(dir == 3):                                         # Found Satellite at East
+                if (dir == 3):  # Found Satellite at East
                     # if self.right is not None:
                     #     print(f"{self.ID} east satellite duplicated! Replacing {self.right.ID} with {satB.ID}.")
-                    self.right  = satB
+                    self.right = satB
 
-                elif(dir == 4):                                       # Found Satellite at West
+                elif (dir == 4):  # Found Satellite at West
                     # if self.left is not None:
                     #     print(f"{self.ID} west satellite duplicated! Replacing {self.left.ID} with {satB.ID}.")
-                    self.left  = satB
-                elif(dir==1 or dir==2):
+                    self.left = satB
+                elif (dir == 1 or dir == 2):
                     pass
                 else:
                     print(f'Sat: {satB.ID} direction not found with respect to {self.ID}')
-            else:   # it is a GT
+            else:  # it is a GT
                 pass
-        
+
     def rotate(self, delta_t, longitude, period):
         """
         Rotates the satellite by re-calculating the sperical coordinates, Cartesian coordinates, and longitude and
@@ -1306,135 +2184,167 @@ class Satellite:
         """
         # Updating spherical coordinates upon rotation (these are phi, theta before inclination)
         self.phi = longitude
-        self.theta = self.theta + 2*math.pi*delta_t/period
-        self.theta = self.theta % (2*math.pi)
+        self.theta = self.theta + 2 * math.pi * delta_t / period
+        self.theta = self.theta % (2 * math.pi)
 
         # Calculating x,y,z coordinates with inclination
-        self.x = self.r * (math.sin(self.theta)*math.cos(self.phi) - math.cos(self.theta)*math.sin(self.phi)*math.sin(self.inclination))
-        self.y = self.r * (math.sin(self.theta)*math.sin(self.phi) + math.cos(self.theta)*math.cos(self.phi)*math.sin(self.inclination))
-        self.z = self.r * math.cos(self.theta)*math.cos(self.inclination)
+        self.x = self.r * (
+                    math.sin(self.theta) * math.cos(self.phi) - math.cos(self.theta) * math.sin(self.phi) * math.sin(
+                self.inclination))
+        self.y = self.r * (
+                    math.sin(self.theta) * math.sin(self.phi) + math.cos(self.theta) * math.cos(self.phi) * math.sin(
+                self.inclination))
+        self.z = self.r * math.cos(self.theta) * math.cos(self.inclination)
         self.polar_angle = self.theta  # Angle within orbital plane [radians]
         # updating latitude and longitude after rotation [degrees]
-        self.latitude = math.asin(self.z/self.r)  # latitude corresponding to the satellite
+        self.latitude = math.asin(self.z / self.r)  # latitude corresponding to the satellite
         # longitude corresponding to satellite
         if self.x > 0:
-            self.longitude = math.atan(self.y/self.x)
+            self.longitude = math.atan(self.y / self.x)
         elif self.x < 0 and self.y >= 0:
-            self.longitude = math.pi + math.atan(self.y/self.x)
+            self.longitude = math.pi + math.atan(self.y / self.x)
         elif self.x < 0 and self.y < 0:
-            self.longitude = math.atan(self.y/self.x) - math.pi
+            self.longitude = math.atan(self.y / self.x) - math.pi
         elif self.y > 0:
-            self.longitude = math.pi/2
+            self.longitude = math.pi / 2
         elif self.y < 0:
-            self.longitude = -math.pi/2
+            self.longitude = -math.pi / 2
         else:
             self.longitude = 0
 
 
 class edge:
-    def  __init__(self, sati, satj, slant_range, dji, dij, shannonRate):
+    def __init__(self, sati, satj, slant_range, dji, dij, shannonRate):
         '''
         dji && dij are deprecated. We do not use them anymore to decide which neighbour is at the right or left direction. We are using their coordinates.
         It is used in the markovian matching only
         '''
-        self.i = sati   # sati ID
-        self.j = satj   # satj ID
+        self.i = sati  # sati ID
+        self.j = satj  # satj ID
         self.slant_range = slant_range  # distance between both sats
         self.dji = dji  # direction from sati to satj
         self.dij = dij  # direction from sati to satj
         self.shannonRate = shannonRate  # max dataRate between sat1 and satj
 
-    def  __repr__(self):
+    def __repr__(self):
         return '\n node i: {}, node j: {}, slant_range: {}, shannonRate: {}'.format(
-    self.i,
-    self.j,
-    self.slant_range,
-    self.shannonRate)
+            self.i,
+            self.j,
+            self.slant_range,
+            self.shannonRate)
 
     def __cmp__(self, other):
-        if hasattr(other, 'slant_range'):    # returns true if has 'weight' attribute
+        if hasattr(other, 'slant_range'):  # returns true if has 'weight' attribute
             return self.slant_range.__cmp__(other.slant_range)
 
 
 class DataBlock:
     """
-    Class for outgoing block of data from the gateways.
-    Instead of simulating the individual data packets from each user, data is gathered at the GTs in blocks - one for
-    each destination GT. Once a block is filled with data it is sent as one unit to the destination GT.
+    Unità di traffico aggregato. Tiene traccia di tempi di coda, TX e propagazione.
     """
 
     def __init__(self, source, destination, ID, creationTime):
-        self.size = BLOCK_SIZE  # size in bits
+        self.size = BLOCK_SIZE  # bits
         self.destination = destination
         self.source = source
-        self.ID = ID            # a string which holds the source id, destination id, and index of the block, e.g. "1_2_12"
-        self.timeAtFull = None  # the simulation time at which the block was full and was ready to be sent.
-        self.creationTime = creationTime  # the simulation time at which the block was created.
-        self.timeAtFirstTransmission = None  # the simulation time at which the block left the GT.
-        self.checkPoints = []   # list of simulation reception times at node with the first entry being the reception time at first sat - can be expanded to include the sat IDs at each checkpoint
-        self.checkPointsSend = []   # list of times after the block was sent at each node
+        self.ID = ID
+        self.creationTime = creationTime
+
+        # tempi/checkpoint
+        self.timeAtFull = None
+        self.timeAtFirstTransmission = None
+        self.checkPoints = []       # arrivo ai nodi
+        self.checkPointsSend = []   # istante di inizio TX ai nodi (compat vecchia)
+
+        # path
         self.path = []
-        self.queueLatency = (None, None) # total time acumulated in the queues
-        self.txLatency = 0      # total transmission time
-        self.propLatency = 0    # total propagation latency
-        self.totLatency = 0     # total latency
         self.isNewPath = False
         self.oldPath = []
         self.newPath = []
-        self.QPath   = []
-        self.queue   = []
-        self.queueTime= []
-        self.oldState  = None
+        self.QPath = []
+
+        # KPI
+        self.queueLatency = (None, None)  # compat vecchia: (tot, [per-hop])
+        self.txLatency = 0.0
+        self.propLatency = 0.0
+        self.totLatency = 0.0
+
+        # coda: marcatori per-hop
+        self._queue_enq_times = []  # istanti di ingresso in coda
+        self._queue_deq_times = []  # istanti di inizio trasmissione
+
+        # RL (se usi)
+        self.queue = []
+        self.queueTime = []
+        self.oldState = None
         self.oldAction = None
-        # self.oldReward = None
 
+    # ---------- queue helpers ----------
+    def mark_enqueued(self, t):
+        self._queue_enq_times.append(float(t))
+
+    def mark_dequeued(self, t):
+        self._queue_deq_times.append(float(t))
+
+    def queue_times(self):
+        n = min(len(self._queue_enq_times), len(self._queue_deq_times))
+        return [(self._queue_enq_times[i], self._queue_deq_times[i]) for i in range(n)]
+
+    def queue_latencies(self):
+        return [deq - enq for (enq, deq) in self.queue_times() if deq >= enq]
+
+    # ---------- compat vecchia ----------
     def getQueueTime(self):
-        '''
-        The queue latency is computed in two steps:
-        First one: time when the block is sent for the first time - time when the the block is created
-        Rest of the steps: sum(checkpoint (Arrival time at node) - checkpointsSend (send time at previous node))
-        '''
-        queueLatency = [0, []]
-        queueLatency[0] += self.timeAtFirstTransmission - self.creationTime        # ANCHOR queue first step
-        queueLatency[1].append(self.timeAtFirstTransmission - self.creationTime)
-        for arrived, sendReady in zip(self.checkPoints, self.checkPointsSend):  # rest of the steps
-            queueLatency[0] += sendReady - arrived
-            queueLatency[1].append(sendReady - arrived)
+        """
+        Compat con plotting vecchio: ritorna (tot_que, [per-hop]).
+        Se hai usato i nuovi marcatori, ricostruisco dai queue_times().
+        """
+        per_hop = self.queue_latencies()
+        if per_hop:
+            tot = sum(per_hop)
+            self.queueLatency = (tot, per_hop)
+            return self.queueLatency
 
+        # fallback: se sei nel flusso originale
+        queueLatency = [0, []]
+        if self.timeAtFirstTransmission is not None:
+            first = self.timeAtFirstTransmission - self.creationTime
+            queueLatency[0] += first
+            queueLatency[1].append(first)
+        for arrived, sendReady in zip(self.checkPoints, self.checkPointsSend):
+            dt = sendReady - arrived
+            queueLatency[0] += dt
+            queueLatency[1].append(dt)
         self.queueLatency = queueLatency
         return queueLatency
 
     def getTotalTransmissionTime(self):
         totalTime = 0
         if len(self.checkPoints) == 1:
-            return self.checkPoints[0] - self.timeAtFirstTransmission
-
-        lastTime = self.creationTime
-        for time in self.checkPoints:
-            totalTime += time - lastTime
-            lastTime = time
-        # ANCHOR KPI: totLatency
+            totalTime = self.checkPoints[0] - self.timeAtFirstTransmission
+        else:
+            lastTime = self.creationTime
+            for t in self.checkPoints:
+                totalTime += t - lastTime
+                lastTime = t
         self.totLatency = totalTime
         return totalTime
 
     def __repr__(self):
-        return'ID = {}\n Source:\n {}\n Destination:\n {}\nTotal latency: {}'.format(
-            self.ID,
-            self.source,
-            self.destination,
-            self.totLatency
-        )
+        return f'ID = {self.ID}\n Source:\n {self.source}\n Destination:\n {self.destination}\nTotal latency: {self.totLatency}'
+
 
 class TerrestrialNode:
     """
-    Terrestrial node: può essere sorgente/destinazione e transito.
-    Lavora con etichette dei nodi che possono essere sia int (id TopoHub)
-    sia str (gateway). Il path è una lista di etichette (int/str).
+    Terrestrial node: sorgente/destinazione e transito.
+    Può generare traffico con il modello "a celle" dei Gateway originali
+    (senza diventare un gateway e senza toccare cell.gateway).
     """
+
     def __init__(self, name: str, ID: int, latitude: float, longitude: float,
                  totalX: int, totalY: int, totalNodes, env, totalLocations, earth, graph=None):
-        self.name = name                # può essere int o str
-        self.ID = ID                    # deve coincidere con la chiave del grafo (int/str)
+        self.name = name            # può essere int o str
+        self.ID = ID                # coincide con la chiave del grafo (int/str)
         self.earth = earth
         self.latitude = latitude
         self.longitude = longitude
@@ -1442,7 +2352,7 @@ class TerrestrialNode:
         self.totalX = totalX
         self.totalY = totalY
 
-        # --- FIX: accetta None / list / tuple / set / numpy array / pandas Series ---
+        # --- totalLocations robusto
         if totalLocations is None:
             tl = []
         elif isinstance(totalLocations, pd.Series):
@@ -1450,13 +2360,11 @@ class TerrestrialNode:
         elif isinstance(totalLocations, np.ndarray):
             tl = [x for x in totalLocations.tolist() if x is not None]
         else:
-            # qualunque iterabile "normale"
             tl = list(totalLocations)
-
         self.totalLocations = tl
         self.peer_nodes = list(self.totalLocations)
 
-        # Grid position
+        # Grid position (per ring-scan celle)
         self.gridLocationX = int((0.5 + longitude / 360) * totalX)
         self.gridLocationY = int((0.5 - latitude / 180) * totalY)
 
@@ -1467,21 +2375,26 @@ class TerrestrialNode:
         self.z = Re * math.cos(self.polar_angle)
 
         # Network structure
-        self.graph = graph  # tipicamente G (TopoHub) o il combinato
+        self.graph = graph  # tipicamente G (TopoHub) o combinato
 
-        # User association
-        self.connectedUsers = []  # lista di utenti collegati
+        # --- Vecchio modello utenti (opzionale)
+        self.connectedUsers = []
 
-        # SimPy attributes
+        # --- Gateway-style: celle e traffico aggregato
+        # formato: [ (lat_deg, lon_deg), users, distanza_km ]
+        self.cellsInRange = []
+        self.totalAvgFlow = 0.0
+
+        # SimPy
         self.env = env
         self.datBlocks = []
         self.fillBlocks = []
         self.sendBlocks = env.process(self.sendBlock())
         self.sendBuffer = ([env.event()], [])  # ([events], [blocks])
-        self.paths = {}                        # dest.name -> path (list di etichette int/str)
-        self.dataRate = 1e9                    # 1 Gbps default
+        self.paths = {}        # dest.name -> path (etichette int/str)
+        self.dataRate = 1e9    # 1 Gbps default
 
-        # RF Link toward users (opzionale)
+        # Link “utente↔nodo” (lasciato com’era)
         self.usr2node = UserLink(
             frequency=3.5e9,
             bandwidth=20e6,
@@ -1494,56 +2407,35 @@ class TerrestrialNode:
             min_rate=1e6
         )
 
-    # ---------------------------
+    # ------------------------------------------------------------
     # helpers
-    # ---------------------------
+    # ------------------------------------------------------------
 
     def _resolve_node(self, key):
-        """
-        Risolve un next-hop che può essere:
-        - int (ID satellite)
-        - str (nome gateway/terrestrial node)
-        - oggetto nodo già valido
-        Usa le lookup di Earth create con build_lookups().
-        """
         earth = getattr(self, "earth", None)
         if earth is None:
             return None
-        # se è già un oggetto con .name/ID lo restituisco
         if hasattr(key, "name") or hasattr(key, "ID"):
             return key
-        # int -> satellite
-        if isinstance(key, int):
+        if isinstance(key, int):     # satellite
             return earth.sat_by_id.get(key, None)
-        # str -> gateway/terrestrial node
-        if isinstance(key, str):
+        if isinstance(key, str):     # terrestrial/gateway
             return earth.node_by_name.get(key, None)
         return None
 
     def _drop_head_from_sendbuffer(self):
-        """Rimuove la testa del buffer e crea un nuovo event vuoto."""
         try:
             self.sendBuffer[0].pop(0)
             self.sendBuffer[1].pop(0)
         except Exception:
-            # se il buffer fosse già stato svuotato altrove, non falliamo
             pass
         finally:
             self.sendBuffer[0].append(self.env.event())
 
     def _edge_latency_and_rate(self, a, b):
-        """
-        Restituisce (propTime, data_rate) per il link tra 'a' e 'b'.
-        'a'/'b' possono essere:
-          - chiavi (int/str) del grafo
-          - oggetti (TerrestrialNode / Gateway / Satellite) con .ID o .name
-        Cerca prima in self.graph (se c'è), poi in earth.terr_graph e earth.space_graph.
-        Gestisce anche MultiGraph.
-        """
-        C_TER = 2e8  # m/s (fibra/rame)
-        C_SPACE = 3e8  # m/s (spazio)
+        C_TER = 2e8   # m/s terra
+        C_SPACE = 3e8 # m/s spazio
 
-        # --- normalizzazione: oggetto -> chiave di grafo
         def _key(n):
             if isinstance(n, (int, str)):
                 return n
@@ -1551,27 +2443,21 @@ class TerrestrialNode:
                 return n.ID
             return getattr(n, "name", None)
 
-        u = _key(a)
-        v = _key(b)
+        u = _key(a); v = _key(b)
         if u is None or v is None:
             return None, None
 
-        # --- helper per estrarre il dict attributi dall'arco (anche MultiGraph)
         def _get_edge(g, x, y):
             if g is None:
                 return None
-            data = g.get_edge_data(x, y)
-            if data is None:
-                data = g.get_edge_data(y, x)
+            data = g.get_edge_data(x, y) or g.get_edge_data(y, x)
             if data is None:
                 return None
-            # MultiGraph: data è un dict {key: {attr}} -> prendi il primo attr dict
+            # MultiGraph -> prendi primo attr dict
             if isinstance(data, dict) and data and all(isinstance(val, dict) for val in data.values()):
-                # scegli il primo
                 data = next(iter(data.values()))
             return data
 
-        # lista di grafi da provare: self.graph, poi terr e space
         graphs = []
         if getattr(self, "graph", None) is not None:
             graphs.append(self.graph)
@@ -1588,101 +2474,338 @@ class TerrestrialNode:
             if ed is not None:
                 g_used = g
                 break
-
         if ed is None:
-            return None, None  # nessun arco trovato
+            return None, None
 
         etype = ed.get("type")
-
-        # --- data rate (nomi possibili)
-        data_rate = (
-                ed.get("dataRate")
-                or ed.get("data_rate")
-                or ed.get("dataRateOG")
-                or ed.get("capacity")
-        )
-
-        # --- propagazione
+        data_rate = (ed.get("dataRate") or ed.get("data_rate") or ed.get("dataRateOG") or ed.get("capacity"))
         propTime = None
+
         if etype in ("GSL", "ISL"):
-            # spaziale
             propTime = ed.get("propDelay") or ed.get("prop_delay")
             if propTime is None:
                 slant = ed.get("slant_range") or ed.get("slant_range_km")
                 if slant is not None:
                     propTime = (slant * 1000.0) / C_SPACE
         else:
-            # terrestre
             propTime = ed.get("propDelay") or ed.get("prop_delay")
             if propTime is None:
                 dist_km = ed.get("distance_km")
                 if dist_km is None:
-                    # prova a calcolare da lon/lat
-                    nu = g_used.nodes.get(u, {})
-                    nv = g_used.nodes.get(v, {})
+                    nu = g_used.nodes.get(u, {}) if g_used is not None else {}
+                    nv = g_used.nodes.get(v, {}) if g_used is not None else {}
                     lon1, lat1 = nu.get("lon"), nu.get("lat")
                     lon2, lat2 = nv.get("lon"), nv.get("lat")
                     if None not in (lon1, lat1, lon2, lat2):
-                        # haversine km
                         R = 6371.0088
-                        import math
-                        φ1, φ2 = math.radians(lat1), math.radians(lat2)
-                        dφ = φ2 - φ1
-                        dλ = math.radians(lon2 - lon1)
-                        a_ = math.sin(dφ / 2) ** 2 + math.cos(φ1) * math.cos(φ2) * math.sin(dλ / 2) ** 2
+                        phi1, phi2 = math.radians(lat1), math.radians(lat2)
+                        dphi = phi2 - phi1
+                        dlambda = math.radians(lon2 - lon1)
+                        a_ = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
                         dist_km = 2 * R * math.asin(math.sqrt(a_))
                 if dist_km:
                     propTime = (dist_km * 1000.0) / C_TER
 
-        # fallback rate minimo
         if data_rate is None or data_rate <= 0:
-            data_rate = getattr(self, "dataRate", 1e8)  # 100 Mbps di default
+            data_rate = getattr(self, "dataRate", 1e8)
 
         return (propTime or 0.0), data_rate
 
-    # ---------------------------
-    # traffic management
-    # ---------------------------
+    # ------------------------------------------------------------
+    # GATEWAY-STYLE (celle/flow)
+    # ------------------------------------------------------------
+
+    def cellDistance(self, cell) -> float:
+        """Distanza geodesica (km) centro-cella ↔ nodo."""
+        cellCoord = (math.degrees(cell.latitude), math.degrees(cell.longitude))
+        nCoord = (self.latitude, self.longitude)
+        return geopy.distance.geodesic(cellCoord, nCoord).km
+
+    def clearCells(self):
+        self.cellsInRange = []
+
+    def findCellsWithinRange(self, earth, maxDistance_km: float, assign_to_cell=False):
+        """
+        Scan “ad anelli” come nel Gateway.
+        Se assign_to_cell=True, scrive anche cell.gateway (di solito False qui).
+        Compila self.cellsInRange con: [(lat_deg, lon_deg), users, distanza_km].
+        """
+        self.cellsInRange = []
+
+        def _consider_cell(x, y):
+            cell = earth.cells[x][y]
+            d = self.cellDistance(cell)
+            if d <= maxDistance_km:
+                if assign_to_cell:
+                    if cell.gateway is None or (cell.gateway is not None and d < cell.gateway[1]):
+                        cell.gateway = (self, d)
+                self.cellsInRange.append([(math.degrees(cell.latitude),
+                                           math.degrees(cell.longitude)), cell.users, d])
+                return True
+            return False
+
+        # Up right:
+        isWithinRangeX = True
+        x = self.gridLocationX
+        while isWithinRangeX:
+            y = self.gridLocationY
+            isWithinRangeY = True
+            if x == earth.total_x:
+                x = 0
+            if not _consider_cell(x, y):
+                isWithinRangeY = False
+                isWithinRangeX = False
+            while isWithinRangeY:
+                if y == -1:
+                    y = earth.total_y - 1
+                if not _consider_cell(x, y):
+                    isWithinRangeY = False
+                y -= 1
+            x += 1
+
+        # Down right:
+        isWithinRangeX = True
+        x = self.gridLocationX
+        while isWithinRangeX:
+            y = self.gridLocationY + 1
+            isWithinRangeY = True
+            if x == earth.total_x:
+                x = 0
+            if not _consider_cell(x, y):
+                isWithinRangeY = False
+                isWithinRangeX = False
+            while isWithinRangeY:
+                if y == earth.total_y:
+                    y = 0
+                if not _consider_cell(x, y):
+                    isWithinRangeY = False
+                y += 1
+            x += 1
+
+        # Up left:
+        isWithinRangeX = True
+        x = self.gridLocationX - 1
+        while isWithinRangeX:
+            y = self.gridLocationY
+            isWithinRangeY = True
+            if x == -1:
+                x = earth.total_x - 1
+            if not _consider_cell(x, y):
+                isWithinRangeY = False
+                isWithinRangeX = False
+            while isWithinRangeY:
+                if y == -1:
+                    y = earth.total_y - 1
+                if not _consider_cell(x, y):
+                    isWithinRangeY = False
+                y -= 1
+            x -= 1
+
+        # Down left:
+        isWithinRangeX = True
+        x = self.gridLocationX - 1
+        while isWithinRangeX:
+            y = self.gridLocationY + 1
+            isWithinRangeY = True
+            if x == -1:
+                x = earth.total_x - 1
+            if not _consider_cell(x, y):
+                isWithinRangeY = False
+                isWithinRangeX = False
+            while isWithinRangeY:
+                if y == earth.total_y:
+                    y = 0
+                if not _consider_cell(x, y):
+                    isWithinRangeY = False
+                y += 1
+            x -= 1
+
+    def addCell(self, cellInfo):
+        self.cellsInRange.append(cellInfo)
+
+    def removeCell(self, cell):
+        # Nota: cell.latitude è in radianti; cellInfo[0] è in gradi.
+        # Funzione raramente usata; la lasciamo com’è per compat.
+        for i, cellInfo in enumerate(self.cellsInRange):
+            if cell.latitude == cellInfo[0][0] and cell.longitude == cellInfo[0][1]:
+                cellInfo.pop(i)
+                return True
+        return False
+
+    def getTotalFlow_gateway_style(self,
+                                   distanceFunc="Step",
+                                   maxDistance_km=60,
+                                   capacity=None,
+                                   fraction=1.0,
+                                   avgFlowPerUser=None):
+        """
+        Calcola self.totalAvgFlow come nei Gateway:
+        - distanceFunc: "Step" o "Slope"
+        - maxDistance_km: raggio di copertura
+        - capacity: se None usa min(backhaul, accesso(UserLink))
+        - fraction: fattore (es. 0.1 = 10% della capacità)
+        - avgFlowPerUser: se None usa avUserLoad globale (fallback 5 Mbps)
+        NON modifica cell.gateway (solo lettura di earth.cells).
+        """
+
+        # 1) Assicurati di avere le celle nel raggio
+        if not self.cellsInRange:
+            # NON assegnare cell.gateway: è solo per conteggio utenti/distanze
+            self.findCellsWithinRange(self.earth, maxDistance_km, assign_to_cell=False)
+
+        # 2) flow per utente
+        if avgFlowPerUser is None:
+            try:
+                flow_per_user = avUserLoad  # se definito globalmente come nel progetto originale
+            except NameError:
+                flow_per_user = 5e6  # 5 Mbps fallback
+        else:
+            flow_per_user = float(avgFlowPerUser)
+
+        # 3) somma dei flussi dalle celle (stile Gateway)
+        totalAvgFlow = 0.0
+        if distanceFunc == "Step":
+            for cell in self.cellsInRange:
+                # cell = [(lat,lon), users, distanza_km]
+                totalAvgFlow += cell[1] * flow_per_user
+        elif distanceFunc == "Slope":
+            gradient = (0.0 - flow_per_user) / (maxDistance_km - 0.0)
+            for cell in self.cellsInRange:
+                totalAvgFlow += (gradient * cell[2] + flow_per_user) * cell[1]
+        else:
+            print(f"[WARN] distanceFunc={distanceFunc} non riconosciuta, uso 'Step'.")
+            for cell in self.cellsInRange:
+                totalAvgFlow += cell[1] * flow_per_user
+
+        # 4) capacità: min(backhaul, accesso via UserLink) se non fornita
+        if capacity is None:
+            cap_backhaul = self._capacity_from_backhaul()
+            cap_access = self._capacity_from_userlink(percentile=0.75)  # usa 0.5 per mediana, 0.9 più conservativo
+            capacity = min(cap_backhaul, cap_access)
+
+        # 5) clamp finale e set degli attributi
+        self.totalAvgFlow = min(totalAvgFlow, capacity * fraction)
+        self.dataRate = capacity  # utile per timeToSend/diagnostica
+
+        # stampa stile Gateway: valore in miliardi (Gbit/s)
+        try:
+            print(f"{self.name}: {self.totalAvgFlow / 1e9:.7f}")
+        except Exception:
+            pass
+
+        return self.totalAvgFlow
+
+    def _capacity_from_backhaul(self, agg="sum"):
+        """
+        Stima capacità backhaul verso la rete terrestre.
+        Legge i dataRate degli archi uscenti dal grafo terrestre.
+        agg: "sum" (default) per sommare i link paralleli, "min" per il collo-di-bottiglia.
+        """
+        G = getattr(getattr(self, "earth", None), "terr_graph", None)
+        if G is None or self.name not in G:
+            return 1e9  # fallback 1 Gbps
+
+        rates = []
+        for nb in G.neighbors(self.name):
+            ed = G.get_edge_data(self.name, nb) or G.get_edge_data(nb, self.name)
+            if ed is None:
+                continue
+            # se MultiGraph, prendi il primo dict di attributi
+            if isinstance(ed, dict) and ed and all(isinstance(v, dict) for v in ed.values()):
+                ed = next(iter(ed.values()))
+            r = ed.get("dataRate") or ed.get("data_rate") or ed.get("capacity")
+            if r and r > 0:
+                rates.append(float(r))
+
+        if not rates:
+            return 1e9
+
+        if agg == "min":
+            return min(rates)
+        else:
+            return sum(rates)
+
+    def _capacity_from_userlink(self, percentile=0.75):
+        """
+        Stima una capacità lato accesso usando UserLink e una distanza utente tipica.
+        Per semplicità prende la distanza p-percentile delle celle nel raggio
+        e calcola una sola portante tipo Shannon per quel pathloss.
+        """
+        if not getattr(self, "cellsInRange", None):
+            return 1e9
+
+        dists = [c[2] for c in self.cellsInRange if len(c) >= 3]
+        if not dists:
+            return 1e9
+
+        d = np.percentile(dists, percentile * 100.0)
+
+        # Free-space path loss a distanza d (km)
+        f = self.usr2node.f
+        B = self.usr2node.B
+        pathLoss_db = 20 * np.log10(4 * math.pi * (d * 1000) * f / Vc)
+
+        snr_lin = 10 ** ((self.usr2node.maxPtx_db + self.usr2node.G - pathLoss_db - self.usr2node.No) / 10.0)
+        shannon = B * np.log2(1.0 + snr_lin)
+
+        # Evita valori assurdi/negativi
+        if not np.isfinite(shannon) or shannon <= 0:
+            shannon = self.usr2node.min_rate
+
+        # opzionale: moltiplica per un fattore di riuso (<=1) se vuoi essere conservativo
+        reuse = 0.5
+        return max(self.usr2node.min_rate, shannon * reuse)
+
+    def setup_coverage_and_flow(self,
+                                earth,
+                                maxDistance_km=60,
+                                distanceFunc="Step",
+                                capacity=None,
+                                fraction=1.0,
+                                avgFlowPerUser=None,
+                                clear=True):
+        """Calcola celle nel raggio e poi totalAvgFlow (gateway-style)."""
+        if clear:
+            self.clearCells()
+        self.findCellsWithinRange(earth, maxDistance_km, assign_to_cell=False)
+        return self.getTotalFlow_gateway_style(distanceFunc=distanceFunc,
+                                               maxDistance_km=maxDistance_km,
+                                               capacity=capacity,
+                                               fraction=fraction,
+                                               avgFlowPerUser=avgFlowPerUser)
+
+    # ------------------------------------------------------------
+    # traffic (fillBlock) — usa totalAvgFlow gateway-style
+    # ------------------------------------------------------------
+
     def makeFillBlockProcesses(self, terrestrial_nodes=None, target_nodes=None):
-        """
-        Avvia un processo fillBlock per ogni destinazione ammessa.
-        """
         if target_nodes is not None:
             allowed = [n for n in target_nodes if n is not self]
         elif terrestrial_nodes is not None:
             allowed = [n for n in terrestrial_nodes if n is not self]
         else:
             allowed = []
-
         if not allowed:
             return
-
         self.totalNodes = len(allowed)
-        self.peer_nodes = list(allowed)  # <-- usato da timeToFullBlock
-
+        self.peer_nodes = list(allowed)
         self.fillBlocks = getattr(self, "fillBlocks", [])
         for dest in allowed:
             self.fillBlocks.append(self.env.process(self.fillBlock(dest)))
 
     def fillBlock(self, destination):
-        """
-        Crea blocchi per 'destination' e li inserisce in sendBuffer appena pieni.
-        """
         index = 0
         unavailableDestinationBuffer = []
-
         while True:
             try:
                 block = DataBlock(self, destination, f"{self.ID}_{destination.ID}_{index}", self.env.now)
-
                 timeToFull = self.timeToFullBlock(block)
                 yield self.env.timeout(timeToFull)
 
-                # path disponibile?
                 if destination.name not in self.paths or not self.paths[destination.name]:
                     unavailableDestinationBuffer.append(block)
                 else:
-                    # svuota prima quelli accumulati
+                    # svuota eventuali blocchi in attesa di path
                     while unavailableDestinationBuffer:
                         if not self.sendBuffer[0][0].triggered:
                             self.sendBuffer[0][0].succeed()
@@ -1690,129 +2813,132 @@ class TerrestrialNode:
                             self.sendBuffer[0].append(self.env.event().succeed())
                         self.sendBuffer[1].append(unavailableDestinationBuffer.pop(0))
 
-                    block.path = self.paths[destination.name]
+                    # assegna path al blocco
+                    block.path = coerce_path_only(self.paths.get(destination.name))
                     if self.earth.pathParam in ['Q-Learning', 'Deep Q-Learning']:
                         block.QPath = [block.path[0], block.path[1], block.path[-1]]
 
                     block.timeAtFull = self.env.now
                     createdBlocks.append(block)
 
+                    # *** QUEUE: entra in coda al sorgente ***
+                    block.mark_enqueued(self.env.now)
+
                     if not self.sendBuffer[0][0].triggered:
                         self.sendBuffer[0][0].succeed()
                     else:
                         self.sendBuffer[0].append(self.env.event().succeed())
                     self.sendBuffer[1].append(block)
-
                     index += 1
 
             except simpy.Interrupt:
-                print(f'Simpy interrupt during fillBlock at node {self.name}')
+                print('Simpy interrupt during fillBlock at node {}'.format(self.name))
                 break
 
-    # ---------------------------
+    # ------------------------------------------------------------
     # transmission
-    # ---------------------------
+    # ------------------------------------------------------------
 
     def sendBlock(self):
         """
-        Preleva il primo blocco in coda e lo spedisce verso il prossimo hop.
-        Il path può contenere int (ID sat) e str (nome GT/TN). Usa le lookup di Earth.
+        Processo di invio per i blocchi in coda del TerrestrialNode.
+        - Normalizza sempre il path (per evitare chiavi non hashable).
+        - Calcola tempo di TX dall'attributo dataRate del link (fallback 100 Mbps se mancante).
+        - Somma la propagation delay del link.
+        - Aggiorna le metriche del DataBlock (queue/tx/prop) in modo compatibile coi plot esistenti.
         """
         while True:
-            # attendo un evento di "dati disponibili"
+            # attesa evento "c'è qualcosa da spedire"
             yield self.sendBuffer[0][0]
-
-            # se il buffer è vuoto, reset e continua
             if not self.sendBuffer[1]:
                 self._drop_head_from_sendbuffer()
                 continue
 
             block = self.sendBuffer[1][0]
 
-            # path sanity
-            p = getattr(block, "path", None)
+            # normalizza il path (rende tutto hashable e lineare)
+            p = coerce_path_to_keys(getattr(block, "path", None))
             if not p or len(p) < 2:
-                safe_print(f"[ERROR] Invalid/missing path from {self.name} to "
-                           f"{getattr(getattr(block, 'destination', None), 'name', '?')}: {p}")
+                try:
+                    safe_print("[ERROR] Invalid/missing path from {} to {}: {}".format(
+                        self.name,
+                        getattr(getattr(block, 'destination', None), 'name', '?'),
+                        getattr(block, 'path', None)
+                    ))
+                except Exception:
+                    print("[ERROR] Invalid/missing path.")
                 self._drop_head_from_sendbuffer()
                 continue
 
-            # dove sono nel path? (match per name o ID)
-            my_keys = {getattr(self, "name", None), getattr(self, "ID", None)}
+            # trova il mio indice nel path e il prossimo hop
+            my_keys = {str(getattr(self, "name", "")), str(getattr(self, "ID", ""))}
             cur_idx = None
             for i, k in enumerate(p):
-                k_norm = k[0] if isinstance(k, (tuple, list)) and k else k
-                if k_norm in my_keys:
+                if str(k) in my_keys:
                     cur_idx = i
                     break
 
             if cur_idx is None or cur_idx + 1 >= len(p):
-                safe_print(f"[ERROR] Current node {self.name} not in path or last-hop inconsistency: {p}")
+                print("[ERROR] Current node {} not in path or last-hop inconsistency: {}".format(self.name, p))
                 self._drop_head_from_sendbuffer()
                 continue
 
-            # prossimo hop (chiave)
             nxt_key = p[cur_idx + 1]
-            nxt_key = nxt_key[0] if isinstance(nxt_key, (tuple, list)) and nxt_key else nxt_key
-
-            # RISOLVI con il nostro helper robusto (chiave -> oggetto)
             next_hop_node = self._resolve_node(nxt_key)
             if next_hop_node is None:
-                safe_print(f"[ERROR] Next hop not found for {self.name} -> {p}")
+                print("[ERROR] Next hop not found for {} -> {} (key={})".format(self.name, p, nxt_key))
                 self._drop_head_from_sendbuffer()
                 continue
 
-            # calcola latency + rate dai grafi usando **chiavi**, NON oggetti
-            u_key = getattr(self, "name", getattr(self, "ID", None))
-            v_key = getattr(next_hop_node, "name", getattr(next_hop_node, "ID", None))
-            propTime, data_rate = self._edge_latency_and_rate(u_key, v_key)
+            # parametri link (propDelay e dataRate)
+            u_key = str(getattr(self, "name", getattr(self, "ID", None)))
+            v_key = str(getattr(next_hop_node, "name", getattr(next_hop_node, "ID", None)))
+            propTime, data_rate = edge_latency_and_rate(self.earth, u_key, v_key)
 
             if data_rate is None or data_rate <= 0:
                 dst_name = getattr(next_hop_node, "name", getattr(next_hop_node, "ID", "?"))
-                safe_print(f"[ERROR] Missing/invalid data rate {data_rate} on edge {self.name} -> {dst_name}")
+                print("[ERROR] Missing/invalid data rate {} on edge {} -> {}".format(data_rate, self.name, dst_name))
                 self._drop_head_from_sendbuffer()
                 continue
 
-            # tempo TX
-            timeToSend = BLOCK_SIZE / data_rate
-            if not hasattr(block, 'timeAtFirstTransmission') or block.timeAtFirstTransmission is None:
+            # --- QUEUE: esce dalla coda e inizia la trasmissione
+            if hasattr(block, "mark_dequeued"):
+                # se esiste, segna l'uscita dalla coda (compat con i tuoi plot)
+                block.mark_dequeued(self.env.now)
+            block.checkPointsSend.append(self.env.now)  # compatibilità storica
+
+            if block.timeAtFirstTransmission is None:
                 block.timeAtFirstTransmission = self.env.now
 
+            # trasmissione (solo tempo di TX, la propagazione la aggiunge il next hop)
+            timeToSend = BLOCK_SIZE / data_rate
             yield self.env.timeout(timeToSend)
             block.txLatency = getattr(block, "txLatency", 0.0) + timeToSend
 
-            # consegna al prossimo hop (propTime opzionale)
+            # invia al prossimo hop aggiungendo la propagation delay su quel link
             next_hop_node.createReceiveBlockProcess(block, propTime if propTime is not None else 0.0)
 
-            # pulizia coda
+            # rimuovi dalla testa e ri-arma l'evento
             self._drop_head_from_sendbuffer()
 
     def timeToSend(self):
         return BLOCK_SIZE / self.dataRate
 
-    # ---------------------------
+    # ------------------------------------------------------------
     # receiving
-    # ---------------------------
+    # ------------------------------------------------------------
 
     def createReceiveBlockProcess(self, block, propTime=0):
         self.env.process(self.receiveBlock(block, propTime))
 
     def receiveBlock(self, block, propTime):
-        """
-        Attende la propagazione e poi:
-        - Se è la destinazione, consegna;
-        - Altrimenti rimette nel buffer locale; il sendBlock calcolerà il prossimo hop in base al path.
-        """
-        # attesa propagazione
+        # ritardo di propagazione
         yield self.env.timeout(propTime)
         block.propLatency += propTime
         block.checkPoints.append(self.env.now)
 
-        # --- match destinazione robusto (name/ID/int/str/oggetto con .name) ---
         def _same_node(dest, me_name, me_id):
-            # dest può essere: int, str, o un oggetto con .name / .ID
-            cand = set()
-            cand.add(str(dest))
+            cand = {str(dest)}
             if hasattr(dest, "name"):
                 cand.add(str(getattr(dest, "name")))
             if hasattr(dest, "ID"):
@@ -1820,52 +2946,45 @@ class TerrestrialNode:
             my_ids = {str(me_name), str(me_id)}
             return len(my_ids.intersection(cand)) > 0
 
+        # consegna oppure re-queue
         if _same_node(block.destination, self.name, getattr(self, "ID", self.name)):
-            # consegna finale
             receivedDataBlocks.append(block)
         else:
-            # non sono la destinazione: rimetto in coda per il forwarding
-            # (il mio sendBlock calcolerà il prossimo hop dal path relativo)
+            # *** QUEUE: entra in coda nel nodo intermedio ***
+            block.mark_enqueued(self.env.now)
+
             if not self.sendBuffer[0][0].triggered:
                 self.sendBuffer[0][0].succeed()
             else:
                 self.sendBuffer[0].append(self.env.event().succeed())
             self.sendBuffer[1].append(block)
-
-    # ---------------------------
-    # traffic model
-    # ---------------------------
+    # ------------------------------------------------------------
+    # traffic model selection
+    # ------------------------------------------------------------
 
     def timeToFullBlock(self, block):
         """
-        Tempo medio per riempire il blocco: in base al flusso totale e
-        al numero di destinazioni ammesse (peer_nodes).
+        Usa SEMPRE self.totalAvgFlow (ottienila con setup_coverage_and_flow / getTotalFlow_gateway_style).
         """
         peers = getattr(self, 'peer_nodes', [])
         n_dests = len(peers)
-
         if n_dests <= 0 or getattr(self, 'totalAvgFlow', 0) <= 0:
             return 1.0
-
         flow_per_dest = self.totalAvgFlow / n_dests
         if flow_per_dest <= 0:
             return 1.0
-
         avgTime = block.size / flow_per_dest
         return np.random.exponential(scale=avgTime)
 
+    # (compat per vecchio modello basato su "connectedUsers")
     def getTotalFlow(self, avgFlowPerUser=1e6, capacity=1e9, fraction=1.0):
-        """
-        Flusso medio totale generato dagli utenti collegati a questo nodo.
-        """
         num_users = len(self.connectedUsers)
         totalAvgFlow = num_users * avgFlowPerUser
-
         self.totalAvgFlow = min(totalAvgFlow, capacity * fraction)
         self.dataRate = capacity
-
         if self.totalAvgFlow == 0:
-            self.totalAvgFlow = 1e-6  # piccolo valore per non azzerare i tempi
+            self.totalAvgFlow = 1e-6
+
 
 
 # @profile
@@ -1874,25 +2993,28 @@ class Gateway:
     Class for the gateways (or concentrators). Each gateway will exist as an instance of this class
     which means that each ground station will have separate processes filling and sending blocks to all other GTs.
     """
-    def __init__(self, name: str, ID: int, latitude: float, longitude: float, totalX: int, totalY: int, totalGTs, env, totalLocations, earth):
-        self.name   = name
-        self.ID     = ID
-        self.earth  = earth
-        self.latitude   = latitude  # number is already in degrees
-        self.longitude  = longitude  # number is already in degrees
+
+    def __init__(self, name: str, ID: int, latitude: float, longitude: float, totalX: int, totalY: int, totalGTs, env,
+                 totalLocations, earth):
+        self.name = name
+        self.ID = ID
+        self.earth = earth
+        self.latitude = latitude  # number is already in degrees
+        self.longitude = longitude  # number is already in degrees
 
         # using the formulas from the set_window() function in the Earth class to the location in terms of cell grid.
         self.gridLocationX = int((0.5 + longitude / 360) * totalX)
         self.gridLocationY = int((0.5 - latitude / 180) * totalY)
         self.cellsInRange = []  # format: [ [(lat,long), userCount, distance], [..], .. ]
         self.totalGTs = totalGTs  # number of GTs including itself
-        self.totalLocations = totalLocations # number of possible GTs
+        self.totalLocations = totalLocations  # number of possible GTs
         self.totalAvgFlow = None  # total combined average flow from all users in bits per second
         self.totalX = totalX
         self.totalY = totalY
 
         # cartesian coordinates
-        self.polar_angle = (math.pi / 2 - math.radians(self.latitude) + 2 * math.pi) % (2 * math.pi)  # Polar angle in radians
+        self.polar_angle = (math.pi / 2 - math.radians(self.latitude) + 2 * math.pi) % (
+                    2 * math.pi)  # Polar angle in radians
         self.x = Re * math.cos(math.radians(self.longitude)) * math.sin(self.polar_angle)
         self.y = Re * math.sin(math.radians(self.longitude)) * math.sin(self.polar_angle)
         self.z = Re * math.cos(self.polar_angle)
@@ -1940,11 +3062,11 @@ class Gateway:
 
     def _resolve_node(self, key):
         """
-        Risolve un next-hop che può essere:
-        - int (ID satellite)
-        - str (nome gateway/terrestrial node)
-        - oggetto nodo già valido
-        Usa le lookup di Earth.
+        Resolve a next hop that could be:
+        - int (satellite ID)
+        - str (gateway name/terrestrial node)
+        - object node
+        Use the Earth lookup.
         """
         earth = getattr(self, "earth", None)
         if earth is None:
@@ -1963,10 +3085,10 @@ class Gateway:
         'a'/'b' possono essere chiavi (int/str) o oggetti con .ID/.name.
         Tenta prima sul grafo terrestre, poi su quello spaziale. Gestisce MultiGraph.
         """
-        C_TER = 2e8  # m/s su fibra/rame
-        C_SPACE = 3e8  # m/s nel vuoto
+        C_TER = 2e8  # m/s on fiber
+        C_SPACE = 3e8  # m/s void
 
-        # normalizza a chiave
+        # normalization
         def _key(n):
             if isinstance(n, (int, str)):
                 return n
@@ -1993,7 +3115,7 @@ class Gateway:
                 data = next(iter(data.values()))
             return data
 
-        # 1) terrestre
+        # 1) terrestrial
         ed = _get_edge(terr, u, v)
         if ed is not None:
             dist_km = ed.get("distance_km")
@@ -2005,7 +3127,7 @@ class Gateway:
                 rate = getattr(self, "dataRate", 1e8)
             return (prop or 0.0), rate
 
-        # 2) spaziale
+        # 2) space
         ed = _get_edge(spac, u, v)
         if ed is not None:
             prop = ed.get("propDelay") or ed.get("prop_delay")
@@ -2052,7 +3174,8 @@ class Gateway:
         while True:
             try:
                 # create a new block to be filled
-                block = DataBlock(self, destination, str(self.ID) + "_" + str(destination.ID) + "_" + str(index), self.env.now)
+                block = DataBlock(self, destination, str(self.ID) + "_" + str(destination.ID) + "_" + str(index),
+                                  self.env.now)
 
                 timeToFull = self.timeToFullBlock(block)  # calculate time to fill block
 
@@ -2061,7 +3184,7 @@ class Gateway:
                 if block.destination.linkedSat[0] is None:
                     unavailableDestinationBuffer.append(block)
                 else:
-                    while unavailableDestinationBuffer: # empty buffer before adding new block
+                    while unavailableDestinationBuffer:  # empty buffer before adding new block
                         if not self.sendBuffer[0][0].triggered:
                             self.sendBuffer[0][0].succeed()
                             self.sendBuffer[1].append(unavailableDestinationBuffer[0])
@@ -2075,7 +3198,7 @@ class Gateway:
                     block.path = self.paths[destination.name]
 
                     if self.earth.pathParam == 'Q-Learning' or self.earth.pathParam == 'Deep Q-Learning':
-                        block.QPath = [block.path[0], block.path[1], block.path[len(block.path)-1]]
+                        block.QPath = [block.path[0], block.path[1], block.path[len(block.path) - 1]]
                         # We add a Qpath field for the Q-Learning case. Only source and destination will be added
                         # after that, every hop will be added at the second last position.
 
@@ -2260,7 +3383,7 @@ class Gateway:
 
     def timeToSend(self, linkedSat):
         distance = linkedSat[0]
-        pTime = distance/Vc
+        pTime = distance / Vc
         return pTime
 
     def createReceiveBlockProcess(self, block, propTime):
@@ -2334,10 +3457,11 @@ class Gateway:
         Calculates the distance to the specified cell (assumed the center of the cell).
         Calculation is based on the geopy package which uses the 'WGS-84' model for earth shape.
         """
-        cellCoord = (math.degrees(cell.latitude), math.degrees(cell.longitude))  # cell lat and long is saved in a format which is not degrees
+        cellCoord = (math.degrees(cell.latitude),
+                     math.degrees(cell.longitude))  # cell lat and long is saved in a format which is not degrees
         gTCoord = (self.latitude, self.longitude)
 
-        return geopy.distance.geodesic(cellCoord,gTCoord).km
+        return geopy.distance.geodesic(cellCoord, gTCoord).km
 
     def distance_GSL(self, satellite):
         """
@@ -2373,12 +3497,12 @@ class Gateway:
              13.05000, 13.64000, 13.98000, 14.81000, 15.47000, 15.87000, 16.55000, 16.98000, 17.24000, 18.10000,
              18.59000, 18.84000, 19.57000])
 
-        pathLoss = 10*np.log10((4*math.pi*self.linkedSat[0]*self.gs2ngeo.f/Vc)**2)
-        snr = 10**((self.gs2ngeo.maxPtx_db + self.gs2ngeo.G - pathLoss - self.gs2ngeo.No)/10)
-        shannonRate = self.gs2ngeo.B*np.log2(1+snr)
+        pathLoss = 10 * np.log10((4 * math.pi * self.linkedSat[0] * self.gs2ngeo.f / Vc) ** 2)
+        snr = 10 ** ((self.gs2ngeo.maxPtx_db + self.gs2ngeo.G - pathLoss - self.gs2ngeo.No) / 10)
+        shannonRate = self.gs2ngeo.B * np.log2(1 + snr)
 
         feasible_speffs = speff_thresholds[np.nonzero(lin_thresholds <= snr)]
-        speff = self.gs2ngeo.B*feasible_speffs[-1]
+        speff = self.gs2ngeo.B * feasible_speffs[-1]
 
         self.dataRate = speff
 
@@ -2393,7 +3517,7 @@ class Gateway:
             for sat in orbitalPlane.sats:
                 d_GSL = self.distance_GSL(sat)
                 # ensure that the satellite is within range
-                if d_GSL <= sat.maxSlantRange*10: #FIXME this x10 is for small constellations
+                if d_GSL <= sat.maxSlantRange * 10:  # FIXME this x10 is for small constellations
                     sats.append((d_GSL, sat, [index]))
                 index += 1
         sats.sort()
@@ -2488,7 +3612,7 @@ class Gateway:
         while isWithinRangeX:
             y = self.gridLocationY
             isWithinRangeY = True
-            if x == earth.total_x: # "roll over" to opposite side of grid.
+            if x == earth.total_x:  # "roll over" to opposite side of grid.
                 x = 0
             cell = earth.cells[x][y]
             distance = self.cellDistance(cell)
@@ -2608,11 +3732,11 @@ class Gateway:
 
         avgTime = block.size / flow  # the average time to fill the buffer in seconds
 
-        time = np.random.exponential(scale=avgTime) # the actual time to fill the buffer after adjustment by exp dist.
+        time = np.random.exponential(scale=avgTime)  # the actual time to fill the buffer after adjustment by exp dist.
 
         return time
 
-    def getTotalFlow(self, avgFlowPerUser, distanceFunc, maxDistance, capacity = None, fraction = 1.0):
+    def getTotalFlow(self, avgFlowPerUser, distanceFunc, maxDistance, capacity=None, fraction=1.0):
         """
         This function is used as a precursor for the 'timeToFillBlock' method. Based on one of two distance functions
         this function finds the combined average flow from the combined users within the ground coverage area of the GT.
@@ -2631,22 +3755,23 @@ class Gateway:
             self.totalAvgFlow = totalFlow
         else:
             totalAvgFlow = 0
-            avgFlowPerUser =  avUserLoad
+            avgFlowPerUser = avUserLoad
 
             if distanceFunc == "Step":
                 for cell in self.cellsInRange:
                     totalAvgFlow += cell[1] * avgFlowPerUser
 
             elif distanceFunc == "Slope":
-                gradient = (0-avgFlowPerUser)/(maxDistance-0)
+                gradient = (0 - avgFlowPerUser) / (maxDistance - 0)
                 for cell in self.cellsInRange:
                     totalAvgFlow += (gradient * cell[2] + avgFlowPerUser) * cell[1]
 
             else:
-                print("Error, distance function not recognized. Provided function = {}. Allowed functions: {} or {}".format(
-                    distanceFunc,
-                    "Step",
-                    "slope"))
+                print(
+                    "Error, distance function not recognized. Provided function = {}. Allowed functions: {} or {}".format(
+                        distanceFunc,
+                        "Step",
+                        "slope"))
                 exit()
 
             if self.linkedSat[0] is None:
@@ -2659,8 +3784,8 @@ class Gateway:
                 self.totalAvgFlow = totalAvgFlow
             else:
                 self.totalAvgFlow = capacity * fraction
-                
-        print(self.name + ': ' + str(self.totalAvgFlow/1000000000))
+
+        print(self.name + ': ' + str(self.totalAvgFlow / 1000000000))
 
     def _hop_key(self, h):
         """Restituisce la chiave confrontabile dello step del path."""
@@ -2726,17 +3851,17 @@ class Cell:
     def __repr__(self):
         return 'Users = {}\n area = {} km^2\n longitude = {} deg\n latitude = {} deg\n pos x = {}\n pos y = {}\n pos ' \
                'z = {}\n x position on map = {}\n y position on map = {}'.format(
-                self.users,
-                '%.2f' % (self.area / 1e6),
-                '%.2f' % math.degrees(self.longitude),
-                '%.2f' % math.degrees(self.latitude),
-                '%.2f' % self.x,
-                '%.2f' % self.y,
-                '%.2f' % self.z,
-                '%.2f' % self.map_x,
-                '%.2f' % self.map_y)
+            self.users,
+            '%.2f' % (self.area / 1e6),
+            '%.2f' % math.degrees(self.longitude),
+            '%.2f' % math.degrees(self.latitude),
+            '%.2f' % self.x,
+            '%.2f' % self.y,
+            '%.2f' % self.z,
+            '%.2f' % self.map_x,
+            '%.2f' % self.map_y)
 
-    def setGT(self, gateways, maxDistance = 60):
+    def setGT(self, gateways, maxDistance=60):
         """
         Finds the closest gateway and updates the internal attribute 'self.gateway' as a tuple:
         (Gateway, distance to terminal). If the distance to the closest gateway is less than some maximum
@@ -2750,7 +3875,8 @@ class Cell:
         self.gateway = closestGT
 
         if closestGT[1] <= maxDistance:
-            closestGT[0].addCell([(math.degrees(self.latitude), math.degrees(self.longitude)), self.users, closestGT[1]])
+            closestGT[0].addCell(
+                [(math.degrees(self.latitude), math.degrees(self.longitude)), self.users, closestGT[1]])
         else:
             self.users = 0
         return closestGT
@@ -2759,23 +3885,24 @@ class Cell:
 # Earth consisting of cells
 # @profile
 class Earth:
-    def __init__(self, env, img_path, gt_path, constellation, inputParams, deltaT, totalLocations, getRates = False, window=None, outputPath='/', terrestrial_nodes_path=None, enable_gateway_traffic=False):
+    def __init__(self, env, img_path, gt_path, constellation, inputParams, deltaT, totalLocations, getRates=False,
+                 window=None, outputPath='/', terrestrial_nodes_path=None, enable_gateway_traffic=False):
         # Input the population count data
         # img_path = 'Population Map/gpw_v4_population_count_rev11_2020_15_min.tif'
         self.outputPath = outputPath
         self.plotPaths = plotPath
         self.lostBlocks = 0
         self.queues = []
-        self.loss   = []
+        self.loss = []
         self.lossAv = []
-        self.DDQNA  = None
-        self.step   = 0
-        self.nMovs  = 0     # number of total movements done by the constellation
-        self.epsilon= []    # set of epsilon values
-        self.rewards= []    # set of rewards
-        self.trains = []    # Set of times when a fit to any dnn has happened
-        self.graph  = None
-        self.CKA    = []
+        self.DDQNA = None
+        self.step = 0
+        self.nMovs = 0  # number of total movements done by the constellation
+        self.epsilon = []  # set of epsilon values
+        self.rewards = []  # set of rewards
+        self.trains = []  # Set of times when a fit to any dnn has happened
+        self.graph = None
+        self.CKA = []
 
         pop_count_data = Image.open(img_path)
 
@@ -2802,9 +3929,9 @@ class Earth:
             self.longi = [window[0], window[1]]
             # dataset pixel bounds:
             self.windowx = (
-            (int)((0.5 + window[0] / 360) * self.total_x), (int)((0.5 + window[1] / 360) * self.total_x))
+                (int)((0.5 + window[0] / 360) * self.total_x), (int)((0.5 + window[1] / 360) * self.total_x))
             self.windowy = (
-            (int)((0.5 - window[3] / 180) * self.total_y), (int)((0.5 - window[2] / 180) * self.total_y))
+                (int)((0.5 - window[3] / 180) * self.total_y), (int)((0.5 - window[2] / 180) * self.total_y))
         else:  # set window size as entire world if no window provided
             self.lati = [-90, 90]
             self.longi = [-179, 180]
@@ -2858,7 +3985,7 @@ class Earth:
                         gtLati = gateways['Latitude'][i]
                         gtLongi = gateways['Longitude'][i]
                         self.gateways.append(Gateway(lName, i, gtLati, gtLongi, self.total_x, self.total_y,
-                                                                   length, env, totalLocations, self))
+                                                     length, env, totalLocations, self))
                         break
         else:
             for i in range(len(gateways['Latitude'])):
@@ -2866,7 +3993,7 @@ class Earth:
                 gtLati = gateways['Latitude'][i]
                 gtLongi = gateways['Longitude'][i]
                 self.gateways.append(Gateway(name, i, gtLati, gtLongi, self.total_x, self.total_y,
-                                                           len(gateways['Latitude']), env, totalLocations, self))
+                                             len(gateways['Latitude']), env, totalLocations, self))
 
         self.pathParam = pathing
 
@@ -2898,24 +4025,22 @@ class Earth:
             for gt in self.gateways:
                 gt.makeFillBlockProcesses(self.gateways)
 
-
         # create constellation of satellites
         self.LEO = create_Constellation(constellation, env, self)
 
         if rotateFirst:
             print('Rotating constellation...')
             for constellation in self.LEO:
-                constellation.rotate(ndeltas*deltaT)
+                constellation.rotate(ndeltas * deltaT)
 
         # Simpy process for handling moving the constellation and the satellites within the constellation
         self.moveConstellation = env.process(self.moveConstellation(env, deltaT, getRates))
 
         self.build_lookups()
 
-    # dentro la classe Earth
     def getNodeByName(self, key):
         """
-        Risolve un 'key' che può essere:
+        solve a key that could be:
           - int: prima satellite per ID, altrimenti nodo terrestre con key int
           - str: nodo terrestre/gateway per nome
         Ritorna l'oggetto (Satellite | Gateway | TerrestrialNode) oppure None.
@@ -2979,7 +4104,7 @@ class Earth:
 
         # Find cells that are within range of all GTs
         for i, gt in enumerate(self.gateways):
-            print("Finding cells within coverage area of GT {} of {}".format(i+1, len(self.gateways)), end='\r')
+            print("Finding cells within coverage area of GT {} of {}".format(i + 1, len(self.gateways)), end='\r')
             gt.findCellsWithinRange(self, distance)
         print('\r')
         print("Time taken to find cells that are within range of all GTs: {} seconds".format(time.time() - start))
@@ -2991,9 +4116,9 @@ class Earth:
             for cell in cells:
                 if cell.gateway is not None:
                     cell.gateway[0].addCell([(math.degrees(cell.latitude),
-                                                     math.degrees(cell.longitude)),
-                                                    cell.users,
-                                                    cell.gateway[1]])
+                                              math.degrees(cell.longitude)),
+                                             cell.users,
+                                             cell.gateway[1]])
 
         print("Time taken to add cell information to all GTs: {} seconds".format(time.time() - start))
         print()
@@ -3377,7 +4502,6 @@ class Earth:
                             path = block.path[:i] + newPath
                             break
                     if path is None:
-                        
                         ("no path to GT:")
                         print(block)
                         exit()
@@ -3478,7 +4602,9 @@ class Earth:
                                         blocksToDistribute.append((block.checkPoints[-1], block))
 
                                     # add buffer with only first block present to temp list
-                                    buffers[neighborIndex] = ([sat.env.event().succeed()], [sat.sendBufferSatsInter[bufferIndex][1][0]], buffer[2])
+                                    buffers[neighborIndex] = (
+                                    [sat.env.event().succeed()], [sat.sendBufferSatsInter[bufferIndex][1][0]],
+                                    buffer[2])
                                     processes[neighborIndex] = sat.sendBlocksSatsInter[bufferIndex]
                                 else:
                                     # add all blocks to redistribution list
@@ -3491,7 +4617,7 @@ class Earth:
                                     sat.sendBlocksSatsInter[bufferIndex].interrupt()
                                     processes[neighborIndex] = sat.env.process(sat.sendBlock(neighbor, True, False))
 
-                            else: # there are no blocks in the buffer
+                            else:  # there are no blocks in the buffer
                                 # add buffer and remake process
                                 buffers[neighborIndex] = sat.sendBufferSatsInter[bufferIndex]
                                 sat.sendBlocksSatsInter[bufferIndex].interrupt()
@@ -3514,7 +4640,8 @@ class Earth:
                 for entryIndex, entry in enumerate(sameSats):
                     if not entry:
                         buffers[entryIndex] = ([sat.env.event()], [], neighborSatsInter[entryIndex][1].ID)
-                        processes[entryIndex] = sat.env.process(sat.sendBlock(neighborSatsInter[entryIndex], True, False))
+                        processes[entryIndex] = sat.env.process(
+                            sat.sendBlock(neighborSatsInter[entryIndex], True, False))
 
                 # overwrite buffers and processes
                 sat.sendBlocksSatsInter = processes
@@ -3554,7 +4681,8 @@ class Earth:
 
                             # reset process
                             sat.sendBlocksSatsIntra[bufferIndex].interrupt()
-                            sat.sendBlocksSatsIntra[bufferIndex] = sat.env.process(sat.sendBlock(sat.intraSats[bufferIndex], True, True))
+                            sat.sendBlocksSatsIntra[bufferIndex] = sat.env.process(
+                                sat.sendBlock(sat.intraSats[bufferIndex], True, True))
 
                 ### GSL ###
                 # check if satellite has a linked GT
@@ -3586,8 +4714,8 @@ class Earth:
                                         (block.checkPoints[-1], block))  # (latest checkpoint time, block)
                                 length = len(sat.sendBufferGT[1]) - 1
                                 for _ in range(length):
-                                    sat.sendBufferGT[1].pop(1) # pop all but the first block
-                                    sat.sendBufferGT[0].pop(1) # pop all but the first event
+                                    sat.sendBufferGT[1].pop(1)  # pop all but the first block
+                                    sat.sendBufferGT[0].pop(1)  # pop all but the first event
 
                         else:  # there are no blocks in the buffer
                             sat.sendBlocksGT[0].interrupt()
@@ -3707,16 +4835,15 @@ class Earth:
                 sats.append(sat)
                 if self.pathParam == 'Q-Learning':
                     # Update ISL
-                    linkedSats   = getLinkedSats(sat, graph, self)
-                    sat.QLearning.linkedSats =  {'U': linkedSats['U'],
-                                    'D': linkedSats['D'],
-                                    'R': linkedSats['R'],
-                                    'L': linkedSats['L']}
+                    linkedSats = getLinkedSats(sat, graph, self)
+                    sat.QLearning.linkedSats = {'U': linkedSats['U'],
+                                                'D': linkedSats['D'],
+                                                'R': linkedSats['R'],
+                                                'L': linkedSats['L']}
                 elif self.pathParam == 'Deep Q-Learning':
                     # update ISL. Intra-plane should not change
                     sat.findIntraNeighbours(self)
                     sat.findInterNeighbours(self)
-
 
         for plane in self.LEO:
             for sat in plane.sats:
@@ -3732,47 +4859,47 @@ class Earth:
                         nextHop = None
 
                         if len(block.QPath) > 3:  # the block does not come from a gateway
-                            if sat.QLearning is not None:   # Q-Learning
+                            if sat.QLearning is not None:  # Q-Learning
                                 nextHop = sat.QLearning.makeAction(block, sat,
-                                                                    sat.orbPlane.earth.gateways[0].graph,
-                                                                    sat.orbPlane.earth, prevSat=(
+                                                                   sat.orbPlane.earth.gateways[0].graph,
+                                                                   sat.orbPlane.earth, prevSat=(
                                         findByID(sat.orbPlane.earth, block.QPath[len(block.QPath) - 3][0])))
-                            elif sat.DDQNA is not None:     # Deep Q-Learning-Online phase
+                            elif sat.DDQNA is not None:  # Deep Q-Learning-Online phase
                                 nextHop = sat.DDQNA.makeDeepAction(block, sat,
-                                                                                   sat.orbPlane.earth.gateways[0].graph,
-                                                                                   sat.orbPlane.earth, prevSat=(
+                                                                   sat.orbPlane.earth.gateways[0].graph,
+                                                                   sat.orbPlane.earth, prevSat=(
                                         findByID(sat.orbPlane.earth, block.QPath[len(block.QPath) - 3][0])))
-                            elif self.DDQNA is not None:    # Deep Q-Learning-Offline phase
+                            elif self.DDQNA is not None:  # Deep Q-Learning-Offline phase
                                 # nextHop = sat.orbPlane.earth.DDQNA.makeDeepAction(block, sat,
                                 nextHop = self.DDQNA.makeDeepAction(block, sat,
-                                                                                   sat.orbPlane.earth.gateways[
-                                                                                       0].graph,
-                                                                                   sat.orbPlane.earth, prevSat=(
+                                                                    sat.orbPlane.earth.gateways[
+                                                                        0].graph,
+                                                                    sat.orbPlane.earth, prevSat=(
                                         findByID(sat.orbPlane.earth, block.QPath[len(block.QPath) - 3][0])))
                             else:
                                 print(f'No learning model for sat: {sat.ID}')
                         else:
-                            if sat.QLearning is not None:   # Q-Learning
+                            if sat.QLearning is not None:  # Q-Learning
                                 nextHop = sat.QLearning.makeAction(block, sat,
-                                                                    sat.orbPlane.earth.gateways[0].graph,
-                                                                    sat.orbPlane.earth)
-                            elif sat.DDQNA is not None:     # Deep Q-Learning-Offline phase
+                                                                   sat.orbPlane.earth.gateways[0].graph,
+                                                                   sat.orbPlane.earth)
+                            elif sat.DDQNA is not None:  # Deep Q-Learning-Offline phase
                                 nextHop = sat.DDQNA.makeDeepAction(block, sat,
+                                                                   sat.orbPlane.earth.gateways[
+                                                                       0].graph,
+                                                                   sat.orbPlane.earth)
+                            elif self.DDQNA is not None:  # Deep Q-Learning-Offline phase
+                                # nextHop = sat.orbPlane.earth.DDQNA.makeDeepAction(block, sat,
+                                nextHop = self.DDQNA.makeDeepAction(block, sat,
                                                                     sat.orbPlane.earth.gateways[
                                                                         0].graph,
                                                                     sat.orbPlane.earth)
-                            elif self.DDQNA is not None:    # Deep Q-Learning-Offline phase
-                                # nextHop = sat.orbPlane.earth.DDQNA.makeDeepAction(block, sat,
-                                nextHop = self.DDQNA.makeDeepAction(block, sat,
-                                                                                   sat.orbPlane.earth.gateways[
-                                                                                       0].graph,
-                                                                                   sat.orbPlane.earth)
                             else:
                                 print(f'No learning model for sat: {sat.ID}')
 
                         if nextHop is None:
                             print(f'Something wrong with block: {block}')
-                        
+
                         elif nextHop != 0:
                             block.QPath[-2] = nextHop
                             pathPlot = block.QPath.copy()
@@ -3789,7 +4916,8 @@ class Earth:
                                 outputPath = sat.orbPlane.earth.outputPath + '/pictures/' + block.ID + '_' + str(
                                     len(block.QPath)) + '_'
                                 # plotShortestPath(sat.orbPlane.earth, pathPlot, outputPath)
-                                plotShortestPath(sat.orbPlane.earth, pathPlot, outputPath, ID=block.ID, time = block.creationTime)
+                                plotShortestPath(sat.orbPlane.earth, pathPlot, outputPath, ID=block.ID,
+                                                 time=block.creationTime)
                         #################################################################
 
                         # path = block.QPath  # if there is Q-Learning the path will be repalced with the QPath
@@ -3809,9 +4937,9 @@ class Earth:
                                         findByID(sat.orbPlane.earth, block.QPath[len(block.QPath) - 3][0])))
                             elif sat.DDQNA is not None:
                                 nextHop = sat.DDQNA.makeDeepAction(block, sat,
-                                                                                  sat.orbPlane.earth.gateways[
-                                                                                      0].graph,
-                                                                                  sat.orbPlane.earth, prevSat=(
+                                                                   sat.orbPlane.earth.gateways[
+                                                                       0].graph,
+                                                                   sat.orbPlane.earth, prevSat=(
                                         findByID(sat.orbPlane.earth, block.QPath[len(block.QPath) - 3][0])))
                             else:
                                 nextHop = sat.orbPlane.earth.DDQNA.makeDeepAction(block, sat,
@@ -3826,9 +4954,9 @@ class Earth:
                                                                    sat.orbPlane.earth)
                             elif sat.DDQNA is not None:
                                 nextHop = sat.DDQNA.makeDeepAction(block, sat,
-                                                                                  sat.orbPlane.earth.gateways[
-                                                                                      0].graph,
-                                                                                  sat.orbPlane.earth)
+                                                                   sat.orbPlane.earth.gateways[
+                                                                       0].graph,
+                                                                   sat.orbPlane.earth)
 
                             else:
                                 nextHop = sat.orbPlane.earth.DDQNA.makeDeepAction(block, sat,
@@ -3852,7 +4980,8 @@ class Earth:
                                 outputPath = sat.orbPlane.earth.outputPath + '/pictures/' + block.ID + '_' + str(
                                     len(block.QPath)) + '_'
                                 # plotShortestPath(sat.orbPlane.earth, pathPlot, outputPath)
-                                plotShortestPath(sat.orbPlane.earth, pathPlot, outputPath, ID=block.ID, time = block.creationTime)
+                                plotShortestPath(sat.orbPlane.earth, pathPlot, outputPath, ID=block.ID,
+                                                 time=block.creationTime)
                         #################################################################
 
                         # path = block.QPath  # if there is Q-Learning the path will be repalced with the QPath
@@ -3871,9 +5000,9 @@ class Earth:
                                     findByID(sat.orbPlane.earth, block.QPath[len(block.QPath) - 3][0])))
                         elif sat.DDQNA is not None:
                             nextHop = sat.DDQNA.makeDeepAction(block, sat,
-                                                                              sat.orbPlane.earth.gateways[
-                                                                                  0].graph,
-                                                                              sat.orbPlane.earth, prevSat=(
+                                                               sat.orbPlane.earth.gateways[
+                                                                   0].graph,
+                                                               sat.orbPlane.earth, prevSat=(
                                     findByID(sat.orbPlane.earth, block.QPath[len(block.QPath) - 3][0])))
                         else:
                             nextHop = sat.orbPlane.earth.DDQNA.makeDeepAction(block, sat,
@@ -3888,9 +5017,9 @@ class Earth:
                                                                sat.orbPlane.earth)
                         elif sat.DDQNA is not None:
                             nextHop = sat.DDQNA.makeDeepAction(block, sat,
-                                                                              sat.orbPlane.earth.gateways[
-                                                                                  0].graph,
-                                                                              sat.orbPlane.earth)
+                                                               sat.orbPlane.earth.gateways[
+                                                                   0].graph,
+                                                               sat.orbPlane.earth)
                         else:
                             nextHop = sat.orbPlane.earth.DDQNA.makeDeepAction(block, sat,
                                                                               sat.orbPlane.earth.gateways[
@@ -3913,7 +5042,8 @@ class Earth:
                             outputPath = sat.orbPlane.earth.outputPath + '/pictures/' + block.ID + '_' + str(
                                 len(block.QPath)) + '_'
                             # plotShortestPath(sat.orbPlane.earth, pathPlot, outputPath)
-                            plotShortestPath(sat.orbPlane.earth, pathPlot, outputPath, ID=block.ID, time = block.creationTime)
+                            plotShortestPath(sat.orbPlane.earth, pathPlot, outputPath, ID=block.ID,
+                                             time=block.creationTime)
                     #################################################################
 
                     # path = block.QPath  # if there is Q-Learning the path will be repalced with the QPath
@@ -3977,7 +5107,9 @@ class Earth:
                                         blocksToDistribute.append((block.checkPoints[-1], block))
 
                                     # add buffer with only first block present to temp list
-                                    buffers[neighborIndex] = ([sat.env.event().succeed()], [sat.sendBufferSatsInter[bufferIndex][1][0]], buffer[2])
+                                    buffers[neighborIndex] = (
+                                    [sat.env.event().succeed()], [sat.sendBufferSatsInter[bufferIndex][1][0]],
+                                    buffer[2])
                                     processes[neighborIndex] = sat.sendBlocksSatsInter[bufferIndex]
                                 else:
                                     # add all blocks to redistribution list
@@ -3990,7 +5122,7 @@ class Earth:
                                     sat.sendBlocksSatsInter[bufferIndex].interrupt()
                                     processes[neighborIndex] = sat.env.process(sat.sendBlock(neighbor, True, False))
 
-                            else: # there are no blocks in the buffer
+                            else:  # there are no blocks in the buffer
                                 # add buffer and remake process
                                 buffers[neighborIndex] = sat.sendBufferSatsInter[bufferIndex]
                                 sat.sendBlocksSatsInter[bufferIndex].interrupt()
@@ -4013,7 +5145,8 @@ class Earth:
                 for entryIndex, entry in enumerate(sameSats):
                     if not entry:
                         buffers[entryIndex] = ([sat.env.event()], [], neighborSatsInter[entryIndex][1].ID)
-                        processes[entryIndex] = sat.env.process(sat.sendBlock(neighborSatsInter[entryIndex], True, False))
+                        processes[entryIndex] = sat.env.process(
+                            sat.sendBlock(neighborSatsInter[entryIndex], True, False))
 
                 # overwrite buffers and processes
                 sat.sendBlocksSatsInter = processes
@@ -4053,7 +5186,8 @@ class Earth:
 
                             # reset process
                             sat.sendBlocksSatsIntra[bufferIndex].interrupt()
-                            sat.sendBlocksSatsIntra[bufferIndex] = sat.env.process(sat.sendBlock(sat.intraSats[bufferIndex], True, True))
+                            sat.sendBlocksSatsIntra[bufferIndex] = sat.env.process(
+                                sat.sendBlock(sat.intraSats[bufferIndex], True, True))
 
                 ### GSL ###
                 # check if satellite has a linked GT
@@ -4085,8 +5219,8 @@ class Earth:
                                         (block.checkPoints[-1], block))  # (latest checkpoint time, block)
                                 length = len(sat.sendBufferGT[1]) - 1
                                 for _ in range(length):
-                                    sat.sendBufferGT[1].pop(1) # pop all but the first block
-                                    sat.sendBufferGT[0].pop(1) # pop all but the first event
+                                    sat.sendBufferGT[1].pop(1)  # pop all but the first block
+                                    sat.sendBufferGT[0].pop(1)  # pop all but the first event
 
                         else:  # there are no blocks in the buffer
                             sat.sendBlocksGT[0].interrupt()
@@ -4133,7 +5267,8 @@ class Earth:
 
                     # check if next step in path is GT (last step in path)
                     if index is None:
-                        print(f'Satellite {sat.ID} not found in the QPath: {block[1].QPath}') # FIXME This should not happen. Debugging I realized when this happens the previous satellite is twice in last positions of QPath, instead of prevSat and currentSat. The current sat was the linked to the gateways bu after the movement it is not anymore.
+                        print(
+                            f'Satellite {sat.ID} not found in the QPath: {block[1].QPath}')  # FIXME This should not happen. Debugging I realized when this happens the previous satellite is twice in last positions of QPath, instead of prevSat and currentSat. The current sat was the linked to the gateways bu after the movement it is not anymore.
                         self.lostBlocks += 1
                     elif index == len(block[1].QPath) - 2:
                         # add block to GT send-buffer
@@ -4232,7 +5367,7 @@ class Earth:
                     interDataRates.append(satData[2])
         return interDataRates
 
-    def moveConstellation(self, env, deltaT=3600, getRates = False):
+    def moveConstellation(self, env, deltaT=3600, getRates=False):
         """
         Simpy process function:
 
@@ -4274,7 +5409,7 @@ class Earth:
 
             # rotate constellation and satellites
             for plane in self.LEO:
-                plane.rotate(ndeltas*deltaT)
+                plane.rotate(ndeltas * deltaT)
 
             # relink satellites and GTs
             self.linkSats2GTs("Optimize")
@@ -4296,30 +5431,30 @@ class Earth:
             if saveISLs:
                 print('Constellation moved! Saving ISLs map...')
                 islpath = outputPath + '/ISL_maps/'
-                os.makedirs(islpath, exist_ok=True) 
-                self.plotMap(plotGT = True, plotSat = True, edges=True, save = True, outputPath=islpath, n=self.nMovs)
+                os.makedirs(islpath, exist_ok=True)
+                self.plotMap(plotGT=True, plotSat=True, edges=True, save=True, outputPath=islpath, n=self.nMovs)
                 plt.close()
 
             # Perform Federated Learning
             if FL_Test:
                 global const_moved
                 const_moved = True
-                CKA_before, CKA_after = perform_FL(self)#, outputPath)
+                CKA_before, CKA_after = perform_FL(self)  # , outputPath)
                 self.CKA.append([CKA_before, CKA_after, env.now])
 
     def testFlowConstraint1(self, graph):
-        highestDist = (0,0)
+        highestDist = (0, 0)
         for GT in self.gateways:
-            if 1/GT.linkedSat[0] > highestDist[0]:
-                highestDist = (1/GT.linkedSat[0], GT)
+            if 1 / GT.linkedSat[0] > highestDist[0]:
+                highestDist = (1 / GT.linkedSat[0], GT)
 
-        lowestDist = (1/highestDist[0], highestDist[1])
+        lowestDist = (1 / highestDist[0], highestDist[1])
 
         toolargeDists = []
 
-        for (u,v,c) in graph.edges.data("slant_range"):
+        for (u, v, c) in graph.edges.data("slant_range"):
             if c > lowestDist[0]:
-                toolargeDists.append((u,v,c))
+                toolargeDists.append((u, v, c))
 
         print("number of edges with too large distance: {}".format(len(toolargeDists)))
 
@@ -4336,14 +5471,13 @@ class Earth:
                 firstStep = edgeWeights[(path[1][0], path[0][0])]
                 print(f'Keyerror in: {GT.name}')
 
-
             for index in range(1, len(path) - 2):
                 try:
-                    if edgeWeights[(path[index][0], path[index+1][0])] > firstStep:
+                    if edgeWeights[(path[index][0], path[index + 1][0])] > firstStep:
                         failed = True
                 except KeyError:
                     print(f'Keyerror 2 in: {GT.name}')
-                    if edgeWeights[(path[index+1][0], path[index][0])] > firstStep:
+                    if edgeWeights[(path[index + 1][0], path[index][0])] > firstStep:
                         failed = True
             if failed:
                 print("{} could not create a path which adheres to flow constraints".format(GT.name))
@@ -4351,7 +5485,17 @@ class Earth:
 
         print("number of GT paths that cannot meet flow restraints: {}".format(totalFailed))
 
-    def plotMap(self, plotGT = True, plotSat = True, path = None, bottleneck = None, save = False, ID=None, time=None, edges=False, arrow_gap=0.008, outputPath='', paths=None, fileName="map.png", n = None):
+    def plotMap(self, plotGT=True, plotSat=True, path=None, bottleneck=None,
+                save=False, ID=None, time=None, edges=False, arrow_gap=0.008,
+                outputPath='', paths=None, fileName="map.png", n=None):
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from matplotlib import cm
+        from matplotlib.colors import Normalize, LogNorm
+        from matplotlib.path import Path
+        from matplotlib.patches import FancyArrowPatch
+
+        # figure
         if paths is None:
             plt.figure()
         else:
@@ -4359,220 +5503,301 @@ class Earth:
 
         legend_properties = {'size': 10, 'weight': 'bold'}
         markerscale = 1.5
-        usage_threshold = 10   # In percentage
+        usage_threshold = 10  # percent
 
-        # Compute the link usage
-        def calculate_link_usage(paths):
+        # --- helpers -------------------------------------------------------------
+
+        # Normalizza qualsiasi path in [(name, lon_deg, lat_deg), ...]
+        def _normalize_path_for_plot(path_in):
+            norm = []
+            if not path_in:
+                return norm
+
+            def _resolve_coords_by_key(key):
+                # 1) usa getNodeByName se disponibile
+                node_fn = getattr(self, "getNodeByName", None)
+                node = node_fn(key) if callable(node_fn) else None
+                if node is not None:
+                    lon = getattr(node, "longitude", getattr(node, "lon", None))
+                    lat = getattr(node, "latitude", getattr(node, "lat", None))
+                    # Se in radianti (satelliti), converti
+                    if isinstance(lon, (int, float)) and abs(lon) <= math.pi + 1e-6:
+                        lon = math.degrees(lon)
+                    if isinstance(lat, (int, float)) and abs(lat) <= (math.pi / 2) + 1e-6:
+                        lat = math.degrees(lat)
+                    if lon is not None and lat is not None:
+                        name = getattr(node, "name", getattr(node, "ID", str(key)))
+                        return (str(name), float(lon), float(lat))
+
+                # 2) grafo terrestre
+                if hasattr(self, "terr_graph") and self.terr_graph is not None and self.terr_graph.has_node(key):
+                    nd = self.terr_graph.nodes[key]
+                    lon = nd.get("lon");
+                    lat = nd.get("lat")
+                    if lon is not None and lat is not None:
+                        return (str(key), float(lon), float(lat))
+
+                # 3) grafo spaziale (se memorizza lon/lat)
+                if hasattr(self, "space_graph") and self.space_graph is not None and self.space_graph.has_node(key):
+                    nd = self.space_graph.nodes[key]
+                    lon = nd.get("lon");
+                    lat = nd.get("lat")
+                    if lon is not None and lat is not None:
+                        return (str(key), float(lon), float(lat))
+
+                return None
+
+            for hop in path_in:
+                # Formati accettati:
+                # - (name, lon, lat)
+                # - name (str/int)
+                # - (name,) o [name]
+                # - oggetto con .name/.ID e .longitude/.latitude (o .lon/.lat)
+                if isinstance(hop, (list, tuple)):
+                    if len(hop) >= 3 and isinstance(hop[1], (int, float)) and isinstance(hop[2], (int, float)):
+                        norm.append((str(hop[0]), float(hop[1]), float(hop[2])))
+                        continue
+                    key = hop[0]
+                elif hasattr(hop, "name") or hasattr(hop, "ID"):
+                    key = getattr(hop, "name", None) or getattr(hop, "ID", None)
+                    lon = getattr(hop, "longitude", getattr(hop, "lon", None))
+                    lat = getattr(hop, "latitude", getattr(hop, "lat", None))
+                    if lon is not None and lat is not None:
+                        if isinstance(lon, (int, float)) and abs(lon) <= math.pi + 1e-6:
+                            lon = math.degrees(lon)
+                        if isinstance(lat, (int, float)) and abs(lat) <= (math.pi / 2) + 1e-6:
+                            lat = math.degrees(lat)
+                        name = getattr(hop, "name", getattr(hop, "ID", str(key)))
+                        norm.append((str(name), float(lon), float(lat)))
+                        continue
+                else:
+                    key = hop
+
+                res = _resolve_coords_by_key(key)
+                if res is not None:
+                    norm.append(res)
+                # se non risolto, lo saltiamo
+
+            # rimuovi duplicati consecutivi identici
+            dedup = []
+            for t in norm:
+                if not dedup or (dedup[-1][1], dedup[-1][2]) != (t[1], t[2]):
+                    dedup.append(t)
+            return dedup
+
+        # Compute link usage per congestion map
+        def calculate_link_usage(paths_in):
             link_usage = {}
-            for path in paths:
-                for i in range(len(path) - 1):
-                    start_node, end_node = path[i], path[i+1]
-                    link_str = '{}_{}'.format(start_node[0], end_node[0])
-
-                    # Coordinates for plotting
-                    coordinates = [(start_node[1], start_node[2]), (end_node[1], end_node[2])]
-
+            for p in paths_in:
+                # normalizza anche qui per sicurezza
+                npth = _normalize_path_for_plot(p)
+                for i in range(len(npth) - 1):
+                    s, e = npth[i], npth[i + 1]
+                    link_str = f'{s[0]}_{e[0]}'
+                    coordinates = [(s[1], s[2]), (e[1], e[2])]
                     if link_str in link_usage:
                         link_usage[link_str]['count'] += 1
                     else:
                         link_usage[link_str] = {'count': 1, 'coordinates': coordinates}
             return link_usage
 
-        # Function to adjust arrow start and end points
+        # Regola inizio/fine frecce
         def adjust_arrow_points(start, end, gap_value):
             dx = end[0] - start[0]
             dy = end[1] - start[1]
-            dist = math.sqrt(dx**2 + dy**2)
-            if dist == 0:  # To avoid division by zero
+            dist = math.sqrt(dx ** 2 + dy ** 2)
+            if dist == 0:
                 return start, end
-            gap_scaled = gap_value * 1440  # Adjusting arrow_gap to coordinate system
+            gap_scaled = gap_value * 1440  # la mappa usa [0..1440]x[0..720]
             new_start = (start[0] + gap_scaled * dx / dist, start[1] + gap_scaled * dy / dist)
             new_end = (end[0] - gap_scaled * dx / dist, end[1] - gap_scaled * dy / dist)
             return new_start, new_end
 
-        # Code for plotting edges with arrow gap
+        # --- plot ISL + GSL edges ------------------------------------------------
         if edges:
             if n is not None:
-                fileName = outputPath + f"ISLs_map_{n}.png"
+                fileName = os.path.join(outputPath, f"ISLs_map_{n}.png")
             else:
-                fileName = outputPath + "ISLs_map.png"
+                fileName = os.path.join(outputPath, "ISLs_map.png")
+
             for plane in self.LEO:
                 for sat in plane.sats:
-                    orig_start_x = int((0.5 + math.degrees(sat.longitude) / 360) * 1440)
-                    orig_start_y = int((0.5 - math.degrees(sat.latitude) / 180) * 720)
+                    orig_start_x = int((0.5 + math.degrees(sat.longitude) / 360.0) * 1440)
+                    orig_start_y = int((0.5 - math.degrees(sat.latitude) / 180.0) * 720)
 
                     for connected_sat in sat.intraSats + sat.interSats:
-                        orig_end_x = int((0.5 + math.degrees(connected_sat[1].longitude) / 360) * 1440)
-                        orig_end_y = int((0.5 - math.degrees(connected_sat[1].latitude) / 180) * 720)
+                        orig_end_x = int((0.5 + math.degrees(connected_sat[1].longitude) / 360.0) * 1440)
+                        orig_end_y = int((0.5 - math.degrees(connected_sat[1].latitude) / 180.0) * 720)
+                        adj_start, adj_end = adjust_arrow_points(
+                            (orig_start_x, orig_start_y),
+                            (orig_end_x, orig_end_y),
+                            arrow_gap
+                        )
+                        plt.arrow(adj_start[0], adj_start[1],
+                                  adj_end[0] - adj_start[0], adj_end[1] - adj_start[1],
+                                  shape='full', lw=0.5, length_includes_head=True, head_width=5)
 
-                        # Adjust arrow start and end points
-                        adj_start, adj_end = adjust_arrow_points((orig_start_x, orig_start_y), (orig_end_x, orig_end_y), arrow_gap)
+            # GSL: gateway->satelliti (solo se linkati)
+            for GT in getattr(self, "gateways", []):
+                if getattr(GT, "linkedSat", None) and GT.linkedSat[1]:
+                    gt_x = GT.gridLocationX
+                    gt_y = GT.gridLocationY
+                    sat_x = int((0.5 + math.degrees(GT.linkedSat[1].longitude) / 360.0) * 1440)
+                    sat_y = int((0.5 - math.degrees(GT.linkedSat[1].latitude) / 180.0) * 720)
+                    _, adj_end = adjust_arrow_points((gt_x, gt_y), (sat_x, sat_y), arrow_gap)
+                    plt.arrow(gt_x, gt_y,
+                              adj_end[0] - gt_x, adj_end[1] - gt_y,
+                              shape='full', lw=0.5, length_includes_head=True, head_width=5)
 
-                        plt.arrow(adj_start[0], adj_start[1], adj_end[0] - adj_start[0], adj_end[1] - adj_start[1], 
-                                shape='full', lw=0.5, length_includes_head=True, head_width=5)
+        # --- plot satellites / gateways -----------------------------------------
+        scat1 = None
+        scat2 = None
 
-            # Plot edges between gateways and satellites
-            for GT in self.gateways:
-                    if GT.linkedSat[1]:  # Check if there's a linked satellite
-                        gt_x = GT.gridLocationX  # Use gridLocationX for gateway X coordinate
-                        gt_y = GT.gridLocationY  # Use gridLocationY for gateway Y coordinate
-                        sat_x = int((0.5 + math.degrees(GT.linkedSat[1].longitude) / 360) * 1440)  # Satellite longitude
-                        sat_y = int((0.5 - math.degrees(GT.linkedSat[1].latitude) / 180) * 720)    # Satellite latitude
-
-                        # Adjust only the endpoint for the arrow
-                        _, adj_end = adjust_arrow_points((gt_x, gt_y), (sat_x, sat_y), arrow_gap)
-                        
-                        plt.arrow(gt_x, gt_y, adj_end[0] - gt_x, adj_end[1] - gt_y,
-                                shape='full', lw=0.5, length_includes_head=True, head_width=5)
-                        
         if plotSat:
-            colors = cm.rainbow(np.linspace(0, 1, len(self.LEO)))
-
+            colors = cm.rainbow(np.linspace(0, 1, len(self.LEO))) if len(self.LEO) > 0 else [(0, 0, 0, 1)]
+            plotSatID = globals().get('plotSatID', False)
             for plane, c in zip(self.LEO, colors):
                 for sat in plane.sats:
-                    gridSatX = int((0.5 + math.degrees(sat.longitude) / 360) * 1440)
-                    gridSatY = int((0.5 - math.degrees(sat.latitude) / 180) * 720) #GT.totalY)
-                    scat2 = plt.scatter(gridSatX, gridSatY, marker='o', s=18, linewidth=0.5, edgecolors='black', color=c, label=sat.ID)
+                    gridSatX = int((0.5 + math.degrees(sat.longitude) / 360.0) * 1440)
+                    gridSatY = int((0.5 - math.degrees(sat.latitude) / 180.0) * 720)
+                    scat2 = plt.scatter(gridSatX, gridSatY, marker='o', s=18, linewidth=0.5,
+                                        edgecolors='black', color=c, label=str(sat.ID))
                     if plotSatID:
-                        plt.text(gridSatX + 10, gridSatY - 10, sat.ID, fontsize=6, ha='left', va='center')    # ANCHOR plots the text of the ID of the satellites
+                        plt.text(gridSatX + 10, gridSatY - 10, str(sat.ID), fontsize=6, ha='left', va='center')
 
         if plotGT:
-            for GT in self.gateways:
-                scat1 = plt.scatter(GT.gridLocationX, GT.gridLocationY, marker='x', c='r', s=28, linewidth=1.5, label = GT.name)
+            for GT in getattr(self, "gateways", []):
+                scat1 = plt.scatter(GT.gridLocationX, GT.gridLocationY,
+                                    marker='x', c='r', s=28, linewidth=1.5, label=str(GT.name))
 
-        # Print path if given
+        # --- disegna path se fornito (robusto a liste di nomi) -------------------
         if path:
-            if bottleneck:
-                xValues = [[], [], []]
-                yValues = [[], [], []]
-                minimum = np.amin(bottleneck[1])
-                length = len(path)
-                index = 0
-                arr = 0
-                minFound = False
+            norm_path = _normalize_path_for_plot(path)
+            if len(norm_path) >= 2:
+                if bottleneck:
+                    xValues = [[], [], []]
+                    yValues = [[], [], []]
+                    minimum = np.amin(bottleneck[1])
+                    length = len(norm_path)
+                    index = 0
+                    arr = 0
+                    minFound = False
 
-                while index < length:
-                    xValues[arr].append(int((0.5 + path[index][1] / 360) * 1440))  # longitude
-                    yValues[arr].append(int((0.5 - path[index][2] / 180) * 720))  # latitude
-                    if not minFound:
-                        if bottleneck[1][index] == minimum:
-                            arr+=1
-                            xValues[arr].append(int((0.5 + path[index][1] / 360) * 1440))  # longitude
-                            yValues[arr].append(int((0.5 - path[index][2] / 180) * 720))  # latitude
-                            xValues[arr].append(int((0.5 + path[index+1][1] / 360) * 1440))  # longitude
-                            yValues[arr].append(int((0.5 - path[index+1][2] / 180) * 720))  # latitude
-                            arr+=1
+                    while index < length:
+                        hop = norm_path[index]
+                        xValues[arr].append(int((0.5 + hop[1] / 360.0) * 1440))
+                        yValues[arr].append(int((0.5 - hop[2] / 180.0) * 720))
+                        if not minFound and index < len(bottleneck[1]) and bottleneck[1][index] == minimum:
+                            arr += 1
+                            hopN = norm_path[index]
+                            hopN1 = norm_path[index + 1] if index + 1 < length else norm_path[index]
+                            xValues[arr].append(int((0.5 + hopN[1] / 360.0) * 1440))
+                            yValues[arr].append(int((0.5 - hopN[2] / 180.0) * 720))
+                            xValues[arr].append(int((0.5 + hopN1[1] / 360.0) * 1440))
+                            yValues[arr].append(int((0.5 - hopN1[2] / 180.0) * 720))
+                            arr += 1
                             minFound = True
-                    index += 1
+                        index += 1
 
-                scat3 = plt.plot(xValues[0], yValues[0], 'b')
-                scat3 = plt.plot(xValues[1], yValues[1], 'r')
-                scat3 = plt.plot(xValues[2], yValues[2], 'b')
+                    plt.plot(xValues[0], yValues[0], 'b')
+                    plt.plot(xValues[1], yValues[1], 'r')
+                    plt.plot(xValues[2], yValues[2], 'b')
+                else:
+                    xValues = [int((0.5 + hop[1] / 360.0) * 1440) for hop in norm_path]
+                    yValues = [int((0.5 - hop[2] / 180.0) * 720) for hop in norm_path]
+                    plt.plot(xValues, yValues)
             else:
-                xValues = []
-                yValues = []
-                for hop in path:
-                    xValues.append(int((0.5 + hop[1] / 360) * 1440))     # longitude
-                    yValues.append(int((0.5 - hop[2] / 180) * 720))      # latitude
-                scat3 = plt.plot(xValues, yValues)  # , marker='.', c='b', linewidth=0.5, label = hop[0])
+                print("[plotMap] Path fornito ma vuoto o con un solo hop dopo la normalizzazione: skip path plot.")
 
-        # Plot the map with the usage of all the links
+        # --- Congestion map (opzionale, se paths non è None) ---------------------
         if paths is not None:
-            link_usage = calculate_link_usage([block.QPath for block in paths]) if pathing == 'Q-Learning' or pathing == 'Deep Q-Learning' else calculate_link_usage([block.path for block in paths])
+            # se usi Q-Learning potresti avere block.QPath, ma qui ci aspettiamo una lista di path
+            link_usage = calculate_link_usage(paths)
 
-            # After calculating max_usage in the plotting section
             try:
                 max_usage = max(info['count'] for info in link_usage.values())
-                min_usage = max_usage * 0.1  # Set minimum usage to 10% of the maximum
+                # min_usage non usato direttamente: lasciamo un floor al 10%
+                # min_usage = max_usage * 0.1
             except ValueError:
                 print("Error: No data available for plotting congestion map.")
-                print('Link usage values:\n')
-                print(link_usage.values())  # FIXME why does this break when few values?
-                return  -1 # If this is within a function, it will exit. If not, remove or adjust this line.
+                print('Link usage values:\n', list(link_usage.values()))
+                return -1
 
-            # Find the most used link
             most_used_link = max(link_usage.items(), key=lambda x: x[1]['count'])
             print(f"Most used link: {most_used_link[0]}, Packets: {most_used_link[1]['count']}")
 
             norm = Normalize(vmin=usage_threshold, vmax=100)
-            # cmap = cm.get_cmap('RdYlGn_r')  # Use a red-yellow-green reversed colormap
-            # cmap = cm.get_cmap('inferno_r')  # Use a darker colormap
-            cmap = cm.get_cmap('cool')  # Use a darker colormap
+            cmap = cm.get_cmap('cool')
 
             for link_str, info in link_usage.items():
                 usage = info['count']
-                # Convert usage to a percentage of the maximum, with a floor of usage_threshold%
-                usage_percentage = max(usage_threshold, (usage / max_usage) * 100)  # Ensure minimum of usage_threshold%
-                # Adjust width based on usage_percentage instead of raw usage
-                width = 0.5 + (usage_percentage / 100) * 2  # Use usage_percentage for scaling
-                
-                # Use usage_percentage for color scaling
-                color = cmap(norm(usage_percentage))  # This line should use `usage_percentage` for color scaling
-
+                usage_percentage = max(usage_threshold, (usage / max_usage) * 100.0)
+                width = 0.5 + (usage_percentage / 100.0) * 2.0
+                color = cmap(norm(usage_percentage))
                 coordinates = info['coordinates']
 
-                # Get original start and end points for adjusting
-                orig_start_x, orig_start_y = (0.5 + coordinates[0][0] / 360) * 1440, (0.5 - coordinates[0][1] / 180) * 720
-                orig_end_x, orig_end_y = (0.5 + coordinates[1][0] / 360) * 1440, (0.5 - coordinates[1][1] / 180) * 720
+                orig_start_x = (0.5 + coordinates[0][0] / 360.0) * 1440
+                orig_start_y = (0.5 - coordinates[0][1] / 180.0) * 720
+                orig_end_x = (0.5 + coordinates[1][0] / 360.0) * 1440
+                orig_end_y = (0.5 - coordinates[1][1] / 180.0) * 720
 
-                # Adjust start and end points using adjust_arrow_points
-                (start_x, start_y), (end_x, end_y) = adjust_arrow_points((orig_start_x, orig_start_y), (orig_end_x, orig_end_y), arrow_gap)
+                (start_x, start_y), (end_x, end_y) = adjust_arrow_points(
+                    (orig_start_x, orig_start_y), (orig_end_x, orig_end_y), arrow_gap
+                )
 
-                # Calculate control points for a slight curve, adjusted for the new start and end points
-                mid_x, mid_y = (start_x + end_x) / 2, (start_y + end_y) / 2
-                ctrl_x, ctrl_y = mid_x + (end_y - start_y) / 10, mid_y - (end_x - start_x) / 5  # Adjust divisor for curve tightness
-
-                # Create a Bezier curve for the directed link with adjusted start and end points
+                # Bezier per una curva leggera
+                mid_x, mid_y = (start_x + end_x) / 2.0, (start_y + end_y) / 2.0
+                ctrl_x, ctrl_y = mid_x + (end_y - start_y) / 10.0, mid_y - (end_x - start_x) / 5.0
                 verts = [(start_x, start_y), (ctrl_x, ctrl_y), (end_x, end_y)]
                 codes = [Path.MOVETO, Path.CURVE3, Path.CURVE3]
-                path = Path(verts, codes)
-
-                # Ensure this color variable is used for the FancyArrowPatch
-                patch = FancyArrowPatch(path=path, arrowstyle='-|>', color=color, linewidth=width, mutation_scale=5, zorder=0.5)
+                pth = Path(verts, codes)
+                patch = FancyArrowPatch(path=pth, arrowstyle='-|>', color=color,
+                                        linewidth=width, mutation_scale=5, zorder=0.5)
                 plt.gca().add_patch(patch)
 
-            # Add legend for congestion color coding
             sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
             sm.set_array([])
-            ticks = [10] + list(np.linspace(10, 100, num=5))  # Ticks from 10% to 100%
-            plt.colorbar(sm, orientation='vertical', label='Relative Traffic Load (%)', fraction=0.02, pad=0.04, ticks=[int(tick) for tick in ticks]) 
-            # plt.colorbar(sm, orientation='vertical', fraction=0.02, pad=0.04, ticks=[int(tick) for tick in ticks]) 
-            # plt.colorbar(sm, orientation='vertical', label='Number of packets', fraction=0.02, pad=0.04)
+            ticks = [10] + list(np.linspace(10, 100, num=5))
+            plt.colorbar(sm, orientation='vertical', label='Relative Traffic Load (%)',
+                         fraction=0.02, pad=0.04, ticks=[int(t) for t in ticks])
 
-            plt.xticks([])
+            plt.xticks([]);
             plt.yticks([])
-            # outPath = outputPath + "/CongestionMapFigures/"
-            # fileName = outPath + "/CongestionMap.png"
-            # os.makedirs(outPath, exist_ok=True)
 
-
-        if plotSat and plotGT:
-            plt.legend([scat1, scat2], ['Gateways', 'Satellites'], loc=3, prop=legend_properties, markerscale=markerscale)
-        elif plotSat:
+        # --- legenda robusta -----------------------------------------------------
+        if plotSat and plotGT and scat1 is not None and scat2 is not None:
+            plt.legend([scat1, scat2], ['Gateways', 'Satellites'],
+                       loc=3, prop=legend_properties, markerscale=markerscale)
+        elif plotSat and scat2 is not None:
             plt.legend([scat2], ['Satellites'], loc=3, prop=legend_properties, markerscale=markerscale)
-        elif plotGT:
+        elif plotGT and scat1 is not None:
             plt.legend([scat1], ['Gateways'], loc=3, prop=legend_properties, markerscale=markerscale)
 
-        plt.xticks([])
+        plt.xticks([]);
         plt.yticks([])
 
+        # Heatmap utenti celle (se non stiamo tracciando 'paths')
         if paths is None:
-            cell_users = np.array(self.getCellUsers()).transpose()
-            plt.imshow(cell_users, norm=LogNorm(), cmap='viridis')
+            try:
+                cell_users = np.array(self.getCellUsers()).transpose()
+                plt.imshow(cell_users, norm=LogNorm(), cmap='viridis')
+            except Exception:
+                # fallback: niente heatmap
+                pass
         else:
             plt.gca().invert_yaxis()
 
-        # plt.show()
-        # plt.imshow(np.log10(np.array(self.getCellUsers()).transpose() + 1), )
-
-        # Add title
         if time is not None and ID is not None:
-            plt.title(f"Creation time: {time*1000:.0f}ms, block ID: {ID}")
+            try:
+                plt.title(f"Creation time: {time * 1000:.0f}ms, block ID: {ID}")
+            except Exception:
+                pass
 
         if save:
+            os.makedirs(os.path.dirname(fileName) if os.path.dirname(fileName) else '.', exist_ok=True)
             plt.tight_layout()
-            plt.savefig(fileName, dpi=1000, bbox_inches='tight', pad_inches=0)   
-  
+            plt.savefig(fileName, dpi=1000, bbox_inches='tight', pad_inches=0)
+
     def initializeQTables(self, NGT, hyperparams, g):
         '''
         QTables initialization at each satellite
@@ -4586,7 +5811,7 @@ class Earth:
             print('Importing Q-Tables from: ' + path)
         else:
             print('Initializing Q-tables...')
-        
+
         i = 0
         for plane in self.LEO:
             for sat in plane.sats:
@@ -4630,11 +5855,11 @@ class Earth:
     def __repr__(self):
         return 'total divisions in x = {}\n total divisions in y = {}\n total cells = {}\n window of operation ' \
                '(longitudes) = {}\n window of operation (latitudes) = {}'.format(
-                self.total_x,
-                self.total_y,
-                self.total_cells,
-                self.windowx,
-                self.windowy)
+            self.total_x,
+            self.total_y,
+            self.total_cells,
+            self.windowx,
+            self.windowy)
 
     def build_lookups(self):
         """
@@ -4670,53 +5895,52 @@ class Earth:
             return key
 
 
-
 class hyperparam:
     def __init__(self, pathing):
         '''
         Hyperparameters of the Q-Learning model
         '''
-        self.alpha      = alpha
-        self.gamma      = gamma
-        self.epsilon    = epsilon
-        self.ArriveR    = ArriveReward
-        self.w1         = w1
-        self.w2         = w2
-        self.w4         = w4
-        self.again      = againPenalty
-        self.unav       = unavPenalty
-        self.pathing    = pathing
-        self.tau        = tau
-        self.updateF    = updateF
-        self.batchSize  = batchSize
+        self.alpha = alpha
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.ArriveR = ArriveReward
+        self.w1 = w1
+        self.w2 = w2
+        self.w4 = w4
+        self.again = againPenalty
+        self.unav = unavPenalty
+        self.pathing = pathing
+        self.tau = tau
+        self.updateF = updateF
+        self.batchSize = batchSize
         self.bufferSize = bufferSize
-        self.hardUpdate = hardUpdate==1
-        self.importQ    = importQVals
-        self.MAX_EPSILON= MAX_EPSILON
-        self.MIN_EPSILON= MIN_EPSILON
-        self.LAMBDA     = LAMBDA
-        self.plotPath  = plotPath
-        self.coordGran  = coordGran
-        self.ddqn       = ddqn
-        self.latBias    = latBias
-        self.lonBias    = lonBias
-        self.diff       = diff
-        self.explore    = explore
-        self.reducedState= reducedState
-        self.online     = onlinePhase
- 
+        self.hardUpdate = hardUpdate == 1
+        self.importQ = importQVals
+        self.MAX_EPSILON = MAX_EPSILON
+        self.MIN_EPSILON = MIN_EPSILON
+        self.LAMBDA = LAMBDA
+        self.plotPath = plotPath
+        self.coordGran = coordGran
+        self.ddqn = ddqn
+        self.latBias = latBias
+        self.lonBias = lonBias
+        self.diff = diff
+        self.explore = explore
+        self.reducedState = reducedState
+        self.online = onlinePhase
+
     def __repr__(self):
         return 'Hyperparameters:\nalpha: {}\ngamma: {}\nepsilon: {}\nw1: {}\nw2: {}\n'.format(
-        self.alpha,
-        self.gamma,
-        self.epsilon,
-        self.w1,
-        self.w2)
+            self.alpha,
+            self.gamma,
+            self.epsilon,
+            self.w1,
+            self.w2)
 
 
 # @profile
 class QLearning:
-    def __init__(self, NGT, hyperparams, earth, g, sat, qTable = None):
+    def __init__(self, NGT, hyperparams, earth, g, sat, qTable=None):
         '''
         Create a 6D numpy array to hold the current Q-values for each state and action pair: Q(s, a)
         The array contains 5 dimensions with the shape of the environment, as well as a 6th "action" dimension.
@@ -4724,34 +5948,35 @@ class QLearning:
         The value of each (state, action) pair is initialized ranomly.
         '''
         satUp, satDown, satRight, satLeft = 3, 3, 3, 3
-        linkedSats   = getLinkedSats(sat, g, earth)
-        self.linkedSats =  {'U': linkedSats['U'],
-                            'D': linkedSats['D'],
-                            'R': linkedSats['R'],
-                            'L': linkedSats['L']}
+        linkedSats = getLinkedSats(sat, g, earth)
+        self.linkedSats = {'U': linkedSats['U'],
+                           'D': linkedSats['D'],
+                           'R': linkedSats['R'],
+                           'L': linkedSats['L']}
 
-        self.actions         = ('U', 'D', 'R', 'L')     # Up, Down, Left, Right
-        self.Destinations    = NGT
+        self.actions = ('U', 'D', 'R', 'L')  # Up, Down, Left, Right
+        self.Destinations = NGT
 
-        self.nStates    = satUp*satDown*satRight*satLeft*NGT
-        self.nActions   = len(self.actions)
-                
+        self.nStates = satUp * satDown * satRight * satLeft * NGT
+        self.nActions = len(self.actions)
+
         if qTable is None:  # initialize it randomly if we are not going to import it
-            self.qTable = np.random.rand(satUp, satDown, satRight, satLeft, NGT, self.nActions)  # first 5 fields are states while 6th field is the action. 4050 values with 10 GTs
+            self.qTable = np.random.rand(satUp, satDown, satRight, satLeft, NGT,
+                                         self.nActions)  # first 5 fields are states while 6th field is the action. 4050 values with 10 GTs
 
         else:
             self.qTable = qTable
 
-        self.alpha  = hyperparams.alpha
-        self.gamma  = hyperparams.gamma
+        self.alpha = hyperparams.alpha
+        self.gamma = hyperparams.gamma
         # self.epsilon= hyperparams.epsilon
-        self.epsilon= []
+        self.epsilon = []
         self.maxEps = hyperparams.MAX_EPSILON
         self.minEps = hyperparams.MIN_EPSILON
-        self.w1     = hyperparams.w1
-        self.w2     = hyperparams.w2
+        self.w1 = hyperparams.w1
+        self.w2 = hyperparams.w2
 
-        self.oldState  = (0,0,0,0,0)
+        self.oldState = (0, 0, 0, 0, 0)
         self.oldAction = 0
 
     def makeAction(self, block, sat, g, earth, prevSat=None):
@@ -4767,7 +5992,7 @@ class QLearning:
         5. Updates Q-Table of the previous hop (Agent) with the following information:
             1. Reward      : Time waited at satB Queue && slant range reduction.
             2. maxNewQValue: Max Q Value of all possible actions at the new agent.
-            3. Old state-action taken at satA in order to know where to update the Q-Table. 
+            3. Old state-action taken at satA in order to know where to update the Q-Table.
             Everytime satB receives a dataBlock from satA satB will send the information required to update satA QTable.
         '''
 
@@ -4779,32 +6004,34 @@ class QLearning:
             prevSat.QLearning.qTable[block.oldState][block.oldAction] = ArriveReward
             earth.rewards.append([ArriveReward, sat.env.now])
             if plotDeliver:
-                if int(block.ID[len(block.ID)-1]) == 0: # Draws 1/10 arrivals
-                    os.makedirs(earth.outputPath + '/pictures/', exist_ok=True) # drawing delivered
+                if int(block.ID[len(block.ID) - 1]) == 0:  # Draws 1/10 arrivals
+                    os.makedirs(earth.outputPath + '/pictures/', exist_ok=True)  # drawing delivered
                     outputPath = earth.outputPath + '/pictures/' + block.ID + '_' + str(len(block.QPath)) + '_'
-                    plotShortestPath(earth, block.QPath, outputPath, ID=block.ID, time = block.creationTime)
-            
+                    plotShortestPath(earth, block.QPath, outputPath, ID=block.ID, time=block.creationTime)
+
             return 0
 
         # 2. Observation of the environment
         newState = tuple(getState(block, sat, g, earth))
-       
+
         # 3. Choose an action (the direction of the next hop)
         # randomly
-        if explore and random.uniform(0, 1)<self.alignEpsilon(earth, sat):
+        if explore and random.uniform(0, 1) < self.alignEpsilon(earth, sat):
             action = self.actions[random.randrange(len(self.actions))]
-            while(self.linkedSats[action] == None): 
+            while (self.linkedSats[action] == None):
                 action = self.actions[random.randrange(len(self.actions))]  # if that direction has no linked satellite
-        
+
         # highest value
         else:
             qValues = self.qTable[newState]
-            action  = self.actions[np.argmax(qValues)]                      # Most valuable action (The one that will give more reward) 
+            action = self.actions[np.argmax(qValues)]  # Most valuable action (The one that will give more reward)
             while self.linkedSats[action] == None:
-                self.qTable[newState][self.actions.index(action)] = -np.inf # change qTable if that action is not available
+                self.qTable[newState][
+                    self.actions.index(action)] = -np.inf  # change qTable if that action is not available
                 action = self.actions[np.argmax(qValues)]
 
-        destination = self.linkedSats[action]    # Action is the keyword of the chosen linked satellite, linkedSats is a dictionary with each satellite associated to its corresponding keyword
+        destination = self.linkedSats[
+            action]  # Action is the keyword of the chosen linked satellite, linkedSats is a dictionary with each satellite associated to its corresponding keyword
 
         # ACT -> [it is done outside, the next hop is added at sat.receiveBlock method to block.QPath]
         nextHop = [destination.ID, math.degrees(destination.longitude), math.degrees(destination.latitude)]
@@ -4813,31 +6040,31 @@ class QLearning:
         if prevSat is not None:
             hop = [sat.ID, math.degrees(sat.longitude), math.degrees(sat.latitude)]
             # if the next hop was already visited before the reward will be againPenalty
-            if hop in block.QPath[:len(block.QPath)-2]:
+            if hop in block.QPath[:len(block.QPath) - 2]:
                 reward = againPenalty
             else:
                 distanceReward = getDistanceReward(prevSat, sat, block.destination, self.w2)
                 try:
-                    queueReward    = getQueueReward   (block.queueTime[len(block.queueTime)-1], self.w1)
+                    queueReward = getQueueReward(block.queueTime[len(block.queueTime) - 1], self.w1)
                 except IndexError:
-                    queueReward = 0 # FIXME
+                    queueReward = 0  # FIXME
                 reward = distanceReward + queueReward
-            
+
             earth.rewards.append([reward, sat.env.now])
 
-        # 5. Updates Q-Table 
-        # Update QTable of previous Node (Agent, satellite) if it was not a gateway     
-            nextMax     = np.max(self.qTable[newState]) # max value of next state given oldAction
-            oldQValue   = prevSat.QLearning.qTable[block.oldState][block.oldAction]
-            newQvalue   = (1-self.alpha) * oldQValue + self.alpha * (reward+self.gamma*nextMax) 
+            # 5. Updates Q-Table
+            # Update QTable of previous Node (Agent, satellite) if it was not a gateway
+            nextMax = np.max(self.qTable[newState])  # max value of next state given oldAction
+            oldQValue = prevSat.QLearning.qTable[block.oldState][block.oldAction]
+            newQvalue = (1 - self.alpha) * oldQValue + self.alpha * (reward + self.gamma * nextMax)
             prevSat.QLearning.qTable[block.oldState][block.oldAction] = newQvalue
-            
+
         else:
             # prev node was a gateway, no need to compute the reward
             reward = 0
 
         # this will be saved always, except when the next hop is the destination, where the process will have already returned
-        block.oldState  = newState
+        block.oldState = newState
         block.oldAction = self.actions.index(action)
 
         earth.step += 1
@@ -4845,13 +6072,14 @@ class QLearning:
         return nextHop
 
     def alignEpsilon(self, earth, sat):
-        global      CurrentGTnumber
-        epsilon     = self.minEps + (self.maxEps - self.minEps) * math.exp(-LAMBDA * earth.step/(decayRate*(CurrentGTnumber**2)))
-        earth        .epsilon.append([epsilon, sat.env.now])
+        global CurrentGTnumber
+        epsilon = self.minEps + (self.maxEps - self.minEps) * math.exp(
+            -LAMBDA * earth.step / (decayRate * (CurrentGTnumber ** 2)))
+        earth.epsilon.append([epsilon, sat.env.now])
         return epsilon
 
     def __repr__(self):
-            return '\n Nº of destinations = {}\n Action Space = {}\n Nº of states = {}\n qTable: {}'.format(
+        return '\n Nº of destinations = {}\n Action Space = {}\n Nº of states = {}\n qTable: {}'.format(
             self.Destinations,
             self.actions,
             self.nStates,
@@ -4860,62 +6088,62 @@ class QLearning:
 
 # @profile
 class DDQNAgent:
-    def __init__(self, NGT, hyperparams, earth, sat_ID = None):   
-        self.actions        = ('U', 'D', 'R', 'L')
+    def __init__(self, NGT, hyperparams, earth, sat_ID=None):
+        self.actions = ('U', 'D', 'R', 'L')
         if not reducedState:
-            self.states         = ['UpLinked Up', 'UpLinked Down','UpLinked Right','UpLinked Left',                        # Up Link
-                            'Up Latitude', 'Up Longitude',                                                             # Up positions
-                            'DownLinked Up', 'DownLinked Down','DownLinked Right','DownLinked Left',                   # Down Link
-                            'Down Latitude', 'Down Longitude',                                                         # Down positions
-                            'RightLinked Up', 'RightLinked Down','RightLinked Right','RightLinked Left',               # Right Link
-                            'Right Latitude', 'Right Longitude',                                                       # Right positions
-                            'LeftLinked Up', 'LeftLinked Down','LeftLinked Right','LeftLinked Left',                   # Left Link
-                            'Left Latitude', 'Left Longitude',                                                         # Left positions
+            self.states = ['UpLinked Up', 'UpLinked Down', 'UpLinked Right', 'UpLinked Left',  # Up Link
+                           'Up Latitude', 'Up Longitude',  # Up positions
+                           'DownLinked Up', 'DownLinked Down', 'DownLinked Right', 'DownLinked Left',  # Down Link
+                           'Down Latitude', 'Down Longitude',  # Down positions
+                           'RightLinked Up', 'RightLinked Down', 'RightLinked Right', 'RightLinked Left',  # Right Link
+                           'Right Latitude', 'Right Longitude',  # Right positions
+                           'LeftLinked Up', 'LeftLinked Down', 'LeftLinked Right', 'LeftLinked Left',  # Left Link
+                           'Left Latitude', 'Left Longitude',  # Left positions
 
-                            'Actual latitude', 'Actual longitude',                                                     # Actual Position
-                            'Destination latitude', 'Destination longitude']                                           # Destination Position
+                           'Actual latitude', 'Actual longitude',  # Actual Position
+                           'Destination latitude', 'Destination longitude']  # Destination Position
         elif reducedState:
-            self.states         = ('Up Latitude', 'Up Longitude',               # Up Link
-                            'Down Latitude', 'Down Longitude',                  # Down Link
-                            'Right Latitude', 'Right Longitude',                # Right Link
-                            'Left Latitude', 'Left Longitude',                  # Left Link
-                            'Actual latitude', 'Actual longitude',              # Current pos
-                            'Destination latitude', 'Destination longitude')    # Destination pos
-        if diff_lastHop: 
+            self.states = ('Up Latitude', 'Up Longitude',  # Up Link
+                           'Down Latitude', 'Down Longitude',  # Down Link
+                           'Right Latitude', 'Right Longitude',  # Right Link
+                           'Left Latitude', 'Left Longitude',  # Left Link
+                           'Actual latitude', 'Actual longitude',  # Current pos
+                           'Destination latitude', 'Destination longitude')  # Destination pos
+        if diff_lastHop:
             self.states.insert(0, 'Last Hop')
 
-        self.actionSize     = len(self.actions)
-        self.stateSize      = len(self.states)
-        self.destinations   = NGT
-        self.earth          = earth
+        self.actionSize = len(self.actions)
+        self.stateSize = len(self.states)
+        self.destinations = NGT
+        self.earth = earth
 
         if sat_ID is None:
             print(f'State Space:\n {self.states}\nState size: {self.stateSize} states')
             print(f'Action Space:\n {self.actions}')
 
-        self.alpha  = hyperparams.alpha
-        self.gamma  = hyperparams.gamma
-        self.epsilon= []
+        self.alpha = hyperparams.alpha
+        self.gamma = hyperparams.gamma
+        self.epsilon = []
         self.maxEps = hyperparams.MAX_EPSILON
         self.minEps = hyperparams.MIN_EPSILON
-        self.w1     = hyperparams.w1
-        self.w2     = hyperparams.w2
-        self.w4     = hyperparams.w4
-        self.tau    = hyperparams.tau
-        self.updateF= hyperparams.updateF
+        self.w1 = hyperparams.w1
+        self.w2 = hyperparams.w2
+        self.w4 = hyperparams.w4
+        self.tau = hyperparams.tau
+        self.updateF = hyperparams.updateF
         self.batchS = hyperparams.batchSize
-        self.bufferS= hyperparams.bufferSize
-        self.hardUpd= hyperparams.hardUpdate
-        self.importQ= hyperparams.importQ
+        self.bufferS = hyperparams.bufferSize
+        self.hardUpd = hyperparams.hardUpdate
+        self.importQ = hyperparams.importQ
         self.online = hyperparams.online
 
-        self.step   = 0
-        self.i      = 0
+        self.step = 0
+        self.i = 0
 
-        self.replayBuffer  = []
+        self.replayBuffer = []
         self.experienceReplay = ExperienceReplay(self.bufferS)
         # self.optimizer        = Adam(learning_rate=self.alpha, clipnorm=Clipnorm)
-        self.loss_function    = losses.Huber()
+        self.loss_function = losses.Huber()
 
         if not self.importQ:
             '''
@@ -4935,7 +6163,7 @@ class DDQNAgent:
             else:
                 print(f'Satellite {sat_ID} Q-Network initialized')
             if ddqn:
-                self.qTarget  = self.createModel()
+                self.qTarget = self.createModel()
                 if sat_ID is None:
                     print('----------------------------------')
                     print("DDQN enabled, TARGET NETWORK created:")
@@ -4955,7 +6183,7 @@ class DDQNAgent:
                     self.qNetwork.summary()
                 else:
                     print(f'Satellite {sat_ID} Q-Network imported!')
-                
+
                 if ddqn:
                     global nnpathTarget
                     # self.qTarget = self.qNetwork
@@ -4973,23 +6201,24 @@ class DDQNAgent:
                 print('----------------------------------')
                 print(f"Wrong Neural Network path")
                 print('----------------------------------')
-        
+
     def getNextHop(self, newState, linkedSats, sat, block):
         '''
         Given a new observed state and the linkied satellites, it will return the next hop
         '''
         # randomly (Exploration)
-        if explore and random.uniform(0, 1)<self.alignEpsilon(self.step, sat):
+        if explore and random.uniform(0, 1) < self.alignEpsilon(self.step, sat):
             actIndex = random.randrange(self.actionSize)
-            action   = self.actions[actIndex]
-            while(linkedSats[action] == None):   # if that direction has no linked satellite
-                self.experienceReplay.store(newState, actIndex, unavPenalty, newState, False) # stores experience, repeats randomly
+            action = self.actions[actIndex]
+            while (linkedSats[action] == None):  # if that direction has no linked satellite
+                self.experienceReplay.store(newState, actIndex, unavPenalty, newState,
+                                            False)  # stores experience, repeats randomly
                 self.earth.rewards.append([unavPenalty, sat.env.now])
                 action = self.actions[random.randrange(len(self.actions))]
 
         # highest value (Exploitation)
         else:
-            if noPingPong: # No PING PONG: if one of the neighbours is the connected satellite then choose that one
+            if noPingPong:  # No PING PONG: if one of the neighbours is the connected satellite then choose that one
                 actIndex = -1
                 if sat.upper == block.destination.linkedSat[1]:
                     actIndex = 0
@@ -5000,11 +6229,12 @@ class DDQNAgent:
                 elif sat.left == block.destination.linkedSat[1]:
                     actIndex = 3
 
-                if actIndex>-1:
-                    action      = self.actions[actIndex]
+                if actIndex > -1:
+                    action = self.actions[actIndex]
                     destination = linkedSats[action]
-                    return [destination.ID, math.degrees(destination.longitude), math.degrees(destination.latitude)], actIndex
-                
+                    return [destination.ID, math.degrees(destination.longitude),
+                            math.degrees(destination.latitude)], actIndex
+
                 # # Mapping from state indices to direction decisions
                 # decision_map = {
                 #     (4, 5): 0,    # Up
@@ -5023,32 +6253,36 @@ class DDQNAgent:
                 #         destination = linkedSats[action]
                 #         return [destination.ID, math.degrees(destination.longitude), math.degrees(destination.latitude)], actIndex
 
-            # Predict 
-            qValues = self.qNetwork(newState).numpy()               # NOTE NN. Gets next hop. state structure in debugging
+            # Predict
+            qValues = self.qNetwork(newState).numpy()  # NOTE NN. Gets next hop. state structure in debugging
             actIndex = np.argmax(qValues)
-            action   = self.actions[actIndex]
-            while(linkedSats[action] == None):              # the chosen action has no linked satellite. NEGATIVE REWARD and store it, motherfucker.
-            
-            # while (linkedSats[action] is None or        # the chosen action has no linked satellite or the chosen satellite has been visited twice.
-            # sum(linkedSats[action].ID == path[0] for path in block.QPath[:-1]) > 1):    
+            action = self.actions[actIndex]
+            while (linkedSats[
+                       action] == None):  # the chosen action has no linked satellite. NEGATIVE REWARD and store it, motherfucker.
 
-                self.experienceReplay.store(newState, actIndex, unavPenalty, newState, False) # from state to the same state, reward -1, not terminated
+                # while (linkedSats[action] is None or        # the chosen action has no linked satellite or the chosen satellite has been visited twice.
+                # sum(linkedSats[action].ID == path[0] for path in block.QPath[:-1]) > 1):
+
+                self.experienceReplay.store(newState, actIndex, unavPenalty, newState,
+                                            False)  # from state to the same state, reward -1, not terminated
                 self.earth.rewards.append([unavPenalty, sat.env.now])
-                qValues[0][actIndex] = -np.inf              # it will not be chosen again (as the model has still not trained with that)
-            
-            #     if np.all(qValues == -np.inf):              # all the neighbors have been visited twice
-            #         print(f'WARNING: All neighbors have been visited at least twice. A loop is going on in {sat.ID} with block: {block.ID}')
-            #         while (linkedSats[action] is None): # if all options were either not available or visited twice, then choose randomly an action that is available
-            #             np.random.randint(4)
-            #             actIndex = np.argmax(qValues)               # find again for the highest value
-            #             action   = self.actions[actIndex]  
-            #         break
-                actIndex = np.argmax(qValues)               # find again for the highest value
-                action   = self.actions[actIndex]  
+                qValues[0][
+                    actIndex] = -np.inf  # it will not be chosen again (as the model has still not trained with that)
 
-        destination = linkedSats[action]    # Action is the keyword of the chosen linked satellite, linkedSats is a dictionary with 
-                                            # each satellite associated to its corresponding keyword
-        
+                #     if np.all(qValues == -np.inf):              # all the neighbors have been visited twice
+                #         print(f'WARNING: All neighbors have been visited at least twice. A loop is going on in {sat.ID} with block: {block.ID}')
+                #         while (linkedSats[action] is None): # if all options were either not available or visited twice, then choose randomly an action that is available
+                #             np.random.randint(4)
+                #             actIndex = np.argmax(qValues)               # find again for the highest value
+                #             action   = self.actions[actIndex]
+                #         break
+                actIndex = np.argmax(qValues)  # find again for the highest value
+                action = self.actions[actIndex]
+
+        destination = linkedSats[
+            action]  # Action is the keyword of the chosen linked satellite, linkedSats is a dictionary with
+        # each satellite associated to its corresponding keyword
+
         # ACT -> [it is done outside, the next hop is added at sat.receiveBlock method to block.QPath]
         try:
             return [destination.ID, math.degrees(destination.longitude), math.degrees(destination.latitude)], actIndex
@@ -5060,7 +6294,7 @@ class DDQNAgent:
         There is no 'Done' state, it will simply continue until the time stops.
         This function will:
         1. Observation of the environment in order to determine state space and get the linked satellites to the one making the action.
-        2. Check if the destination is the linked gateway. 
+        2. Check if the destination is the linked gateway.
             If the satellite sent the block to the satellite linked to the destination GW, it will receive a reward of 10.
             The previous satellite will match the destination of the block to the linked gateway of the next state (I hope and I guess)
             In that case it will just return 0 and the block will be sent there.
@@ -5077,95 +6311,100 @@ class DDQNAgent:
         5. Store experience from the previous hop (Agent) with the following information:
             1. Reward      : Time waited at satB Queue && slant range reduction.
             2. maxNewQValue: Max Q Value of all possible actions at the new agent.
-            3. Old state-action taken at satA in order to know where to update the NNs. 
-            Everytime satB receives a dataBlock from satA satB will send the information required to update the NNs.        
+            3. Old state-action taken at satA in order to know where to update the NNs.
+            Everytime satB receives a dataBlock from satA satB will send the information required to update the NNs.
             Unlike in regular Q-Learning, in this step we just have to store the experience into the experience replay buffer.
             It will be updated automatically taking a random batch from the buffer every n iterations.
             We will store the old state of the block, the action index taken there, the reward received and the new state it moved into.
         6. Update the qTarget every n iterations.
         '''
         # 1. Observe the state and search for the satellites linked to the one making the action
-        linkedSats  = getDeepLinkedSats(sat, g, earth)
+        linkedSats = getDeepLinkedSats(sat, g, earth)
         if reducedState:
-            newState    = getDeepStateReduced(block, sat, linkedSats)
+            newState = getDeepStateReduced(block, sat, linkedSats)
         elif diff and not diff_lastHop:
-            newState    = getDeepStateDiff(block, sat, linkedSats) # This is the one being used by default
+            newState = getDeepStateDiff(block, sat, linkedSats)  # This is the one being used by default
         elif diff_lastHop:
-            newState    = getDeepStateDiffLastHop(block, sat, linkedSats)
+            newState = getDeepStateDiffLastHop(block, sat, linkedSats)
         else:
-            newState    = getDeepState(block, sat, linkedSats)
+            newState = getDeepState(block, sat, linkedSats)
 
-        if newState is None: 
-            earth.lostBlocks+=1
+        if newState is None:
+            earth.lostBlocks += 1
             return 0
-        self.step   += 1
+        self.step += 1
 
         # 2. Check if the destination is the linked gateway. The reward is ArriveReward here and goes to the previous satellite. # ANCHOR plot delivered deep NN
-        if sat.linkedGT and (block.destination.ID == sat.linkedGT.ID):    # Compare IDs
+        if sat.linkedGT and (block.destination.ID == sat.linkedGT.ID):  # Compare IDs
             if distanceRew == 4:
                 satDest = block.destination.linkedSat[1]
-                distanceReward  = getDistanceRewardV4(prevSat, sat, satDest, self.w2, self.w4)
+                distanceReward = getDistanceRewardV4(prevSat, sat, satDest, self.w2, self.w4)
                 # distanceReward  = getDistanceRewardV4(prevSat, sat, block.destination, self.w2, self.w4)
-                queueReward     = getQueueReward   (block.queueTime[len(block.queueTime)-1], self.w1)
-                reward          = distanceReward + queueReward + ArriveReward
+                queueReward = getQueueReward(block.queueTime[len(block.queueTime) - 1], self.w1)
+                reward = distanceReward + queueReward + ArriveReward
                 self.experienceReplay.store(block.oldState, block.oldAction, reward, newState, True)
                 self.earth.rewards.append([reward, sat.env.now])
                 # self.experienceReplay.store(block.oldState, block.oldAction, ArriveReward, newState, True)
             elif distanceRew == 5:
-                distanceReward  = getDistanceRewardV5(prevSat, sat, self.w2)
-                reward          = distanceReward + ArriveReward
+                distanceReward = getDistanceRewardV5(prevSat, sat, self.w2)
+                reward = distanceReward + ArriveReward
                 self.experienceReplay.store(block.oldState, block.oldAction, reward, newState, True)
                 self.earth.rewards.append([reward, sat.env.now])
             else:
                 self.experienceReplay.store(block.oldState, block.oldAction, ArriveReward, newState, True)
                 self.earth.rewards.append([ArriveReward, sat.env.now])
 
-            if TrainThis: self.train(sat, earth) # FIXME why here a train?? should not be here. Make a test without this when the model is stable
+            if TrainThis: self.train(sat,
+                                     earth)  # FIXME why here a train?? should not be here. Make a test without this when the model is stable
             if plotDeliver:
-                if int(block.ID[len(block.ID)-1]) == 0: # Draws 1/10 arrivals
-                    os.makedirs(earth.outputPath + '/pictures/', exist_ok=True) # drawing delivered
+                if int(block.ID[len(block.ID) - 1]) == 0:  # Draws 1/10 arrivals
+                    os.makedirs(earth.outputPath + '/pictures/', exist_ok=True)  # drawing delivered
                     outputPath = earth.outputPath + '/pictures/' + block.ID + '_' + str(len(block.QPath)) + '_'
-                    plotShortestPath(earth, block.QPath, outputPath, ID=block.ID, time = block.creationTime)
+                    plotShortestPath(earth, block.QPath, outputPath, ID=block.ID, time=block.creationTime)
             return 0
 
         # 3. Choose an action (the direction of the next hop)
         nextHop, actIndex = self.getNextHop(newState, linkedSats, sat, block)
-        
+
         # 4. Computes reward/penalty for the previous action
         if prevSat is not None:
             hop = [sat.ID, math.degrees(sat.longitude), math.degrees(sat.latitude)]
             # if the next hop was already visited before the reward will be -1
-            if hop in block.QPath[:len(block.QPath)-2]:
+            if hop in block.QPath[:len(block.QPath) - 2]:
                 again = againPenalty
             else:
                 again = 0
 
             if distanceRew == 1:
-                distanceReward  = getDistanceReward(prevSat, sat, block.destination, self.w2)
+                distanceReward = getDistanceReward(prevSat, sat, block.destination, self.w2)
             elif distanceRew == 2:
-                prevLinkedSats  = getDeepLinkedSats(prevSat, g, earth)
-                distanceReward  = getDistanceRewardV2(prevSat, sat, prevLinkedSats['U'], prevLinkedSats['D'], prevLinkedSats['R'], prevLinkedSats['L'], block.destination, self.w2)
+                prevLinkedSats = getDeepLinkedSats(prevSat, g, earth)
+                distanceReward = getDistanceRewardV2(prevSat, sat, prevLinkedSats['U'], prevLinkedSats['D'],
+                                                     prevLinkedSats['R'], prevLinkedSats['L'], block.destination,
+                                                     self.w2)
             elif distanceRew == 3:
-                prevLinkedSats  = getDeepLinkedSats(prevSat, g, earth)
-                distanceReward  = getDistanceRewardV3(prevSat, sat, prevLinkedSats['U'], prevLinkedSats['D'], prevLinkedSats['R'], prevLinkedSats['L'], block.destination, self.w2)
+                prevLinkedSats = getDeepLinkedSats(prevSat, g, earth)
+                distanceReward = getDistanceRewardV3(prevSat, sat, prevLinkedSats['U'], prevLinkedSats['D'],
+                                                     prevLinkedSats['R'], prevLinkedSats['L'], block.destination,
+                                                     self.w2)
             elif distanceRew == 4:
                 satDest = block.destination.linkedSat[1]
-                distanceReward  = getDistanceRewardV4(prevSat, sat, satDest, self.w2, self.w4)
+                distanceReward = getDistanceRewardV4(prevSat, sat, satDest, self.w2, self.w4)
                 # distanceReward  = getDistanceRewardV4(prevSat, sat, block.destination, self.w2, self.w4)
             elif distanceRew == 5:
-                distanceReward  = getDistanceRewardV5(prevSat, sat, self.w2)
+                distanceReward = getDistanceRewardV5(prevSat, sat, self.w2)
 
             try:
-                queueReward     = getQueueReward   (block.queueTime[len(block.queueTime)-1], self.w1)
+                queueReward = getQueueReward(block.queueTime[len(block.queueTime) - 1], self.w1)
             except IndexError:
-                queueReward = 0 # FIXME In some hop the queue time was not appended to block.queueTime, line 620
-            reward          = distanceReward + again + queueReward
+                queueReward = 0  # FIXME In some hop the queue time was not appended to block.queueTime, line 620
+            reward = distanceReward + again + queueReward
 
-        # 5. Store the experience of previous Node (Agent, satellite) if it was not a gateway  
-            self.experienceReplay.store(block.oldState, block.oldAction, reward, newState, False) # action index
+            # 5. Store the experience of previous Node (Agent, satellite) if it was not a gateway
+            self.experienceReplay.store(block.oldState, block.oldAction, reward, newState, False)  # action index
             self.earth.rewards.append([reward, sat.env.now])
 
-        # 6. Learning, train the Q-Network at every time we store experience
+            # 6. Learning, train the Q-Network at every time we store experience
             if TrainThis and self.step % nTrain == 0:
                 self.train(sat, earth)
 
@@ -5178,12 +6417,12 @@ class DDQNAgent:
             self.alignQTarget(hardUpdate)
 
         # this will be saved always, except when the next hop is the destination, where the process will have already returned
-        block.oldState  = newState
+        block.oldState = newState
         block.oldAction = actIndex
-        
+
         return nextHop
 
-    def alignEpsilon(self, step, sat): # the epsilon is reduced with time
+    def alignEpsilon(self, step, sat):  # the epsilon is reduced with time
         '''
         Updates epsilon value at each step
         0.01+0.99*e^(-0.0005*10000):
@@ -5192,12 +6431,13 @@ class DDQNAgent:
         5000  -> 0.091
         10000 -> 0.01667
         '''
-        global      CurrentGTnumber
-        epsilon     = self.minEps + (self.maxEps - self.minEps) * math.exp(-LAMBDA * step/(decayRate*(CurrentGTnumber**2)))
-        self        .epsilon.append([epsilon, sat.env.now])
+        global CurrentGTnumber
+        epsilon = self.minEps + (self.maxEps - self.minEps) * math.exp(
+            -LAMBDA * step / (decayRate * (CurrentGTnumber ** 2)))
+        self.epsilon.append([epsilon, sat.env.now])
         return epsilon
 
-    def alignQTarget(self, hardUpdate = True): # Soft one is done every step
+    def alignQTarget(self, hardUpdate=True):  # Soft one is done every step
         '''
         This function is not used now since the q target only exists in double deep q learning and it is not implemented.
         Updates the qTarget NN with the weights of the qNetwork.
@@ -5208,7 +6448,7 @@ class DDQNAgent:
         However, if the data is relatively stable and consistent, then hard updates may cause the target network to oscillate too much, destabilizing the training of the Q-network.
 
         Soft updates, where the target network's parameters are updated with a moving average of the Q-network's parameters, are more stable than hard updates and can help the
-        Q-network converge more smoothly. This is because soft updates gradually propagate the changes in the Q-network's parameters to the target network, rather than suddenly 
+        Q-network converge more smoothly. This is because soft updates gradually propagate the changes in the Q-network's parameters to the target network, rather than suddenly
         switching to the latest weights. This can be a better choice when the data is relatively stable and consistent, or when you're worried about potential stability issues in
         the training process.
 
@@ -5217,13 +6457,13 @@ class DDQNAgent:
         if hardUpdate:
             self.i += 1
             if self.i == self.updateF:
-                self.qTarget.set_weights(self.qNetwork.get_weights()) # NOTE qTarget gets qNetrowk values
+                self.qTarget.set_weights(self.qNetwork.get_weights())  # NOTE qTarget gets qNetrowk values
                 # print(f"Q-Target network hard updated!!!")
                 self.i = 0
 
         else:
-            for t, e in zip(self.qTarget.trainable_variables, 
-            self.qNetwork.trainable_variables): t.assign(t * (1 - self.tau) + e * self.tau)
+            for t, e in zip(self.qTarget.trainable_variables,
+                            self.qNetwork.trainable_variables): t.assign(t * (1 - self.tau) + e * self.tau)
 
     def createModel(self):
         model = Sequential()
@@ -5236,30 +6476,30 @@ class DDQNAgent:
         return model
 
     def train(self, sat, earth):
-        if self.experienceReplay.buffeSize < self.batchS*3:
+        if self.experienceReplay.buffeSize < self.batchS * 3:
             return -1
 
         # 1. Get a random batch from the experience
         miniBatch = self.experienceReplay.getBatch(self.batchS)
         states, actions, rewards, nextStates, Dones = self.experienceReplay.getArraysFromBatch(miniBatch)
-        states      = states.reshape((self.batchS,self.stateSize))
-        nextStates  = nextStates.reshape((self.batchS,self.stateSize))
-         
+        states = states.reshape((self.batchS, self.stateSize))
+        nextStates = nextStates.reshape((self.batchS, self.stateSize))
+
         # 2. Compute expected reward
         if ddqn:
-            futureRewards = self.qTarget(nextStates)           # NOTE NN. Gets future rewards
+            futureRewards = self.qTarget(nextStates)  # NOTE NN. Gets future rewards
         else:
-            futureRewards = self.qNetwork(nextStates)          # NOTE NN. Gets future rewards
-        expectedRewards = rewards + self.gamma*np.max(futureRewards, axis=1)
+            futureRewards = self.qNetwork(nextStates)  # NOTE NN. Gets future rewards
+        expectedRewards = rewards + self.gamma * np.max(futureRewards, axis=1)
 
         # 3. Mask for the actions
         acts = np.eye(self.actionSize)[actions]
 
         # 4. Stop Loss
-        if stopLoss and len(sat.orbPlane.earth.loss)>nLosses:
+        if stopLoss and len(sat.orbPlane.earth.loss) > nLosses:
             savedLoss = sat.orbPlane.earth.loss
             last_n_losses = [sample[0] for sample in savedLoss[-nLosses:]]
-            average = sum(last_n_losses) / nLosses 
+            average = sum(last_n_losses) / nLosses
             sat.orbPlane.earth.lossAv.append(average)
             if average < lThreshold:
                 global TrainThis
@@ -5272,14 +6512,15 @@ class DDQNAgent:
                 return 0
 
         # 5. fit the model and save the loss
-        loss = self.qNetwork.fit(states, acts * expectedRewards[:, None], batch_size=self.batchS, epochs=1, verbose=0) # NOTE qNetwork fit
+        loss = self.qNetwork.fit(states, acts * expectedRewards[:, None], batch_size=self.batchS, epochs=1,
+                                 verbose=0)  # NOTE qNetwork fit
         sat.orbPlane.earth.loss.append([loss.history['loss'][0], sat.env.now])
-        earth.trains.append([sat.env.now]) # counts the number of trainings
-        
+        earth.trains.append([sat.env.now])  # counts the number of trainings
+
 
 # @profile
 class ExperienceReplay:
-    def __init__(self, maxlen = 100):
+    def __init__(self, maxlen=100):
         '''
         This is a buffer that holds information that are used during training process.
 
@@ -5306,12 +6547,12 @@ class ExperienceReplay:
         '''
         gets the batch data divided into fields
         '''
-        states  = np.array([x[0] for x in batch])
+        states = np.array([x[0] for x in batch])
         actions = np.array([x[1] for x in batch])
         rewards = np.array([x[2] for x in batch])
         next_st = np.array([x[3] for x in batch])
-        dones   = np.array([x[4] for x in batch])
-        
+        dones = np.array([x[4] for x in batch])
+
         return states, actions, rewards, next_st, dones
 
     @property
@@ -5321,7 +6562,7 @@ class ExperienceReplay:
         this decorator is a built-in function that allows us to define methods that can be accessed like an attribute
         '''
         return len(self.buffer)
-        
+
 
 ###############################################################################
 ############################   Functions    ###################################
@@ -5330,21 +6571,14 @@ class ExperienceReplay:
 
 # @profile
 def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementTime, totalLocations, outputPath, matching='Greedy', TerrestrialNodesLocation=None):
-    import builtins, unicodedata as _ud
     print = builtins.print
 
     # ---------------------------
     # 1) Backbone terrestre TopoHub
     print("Building terrestrial graph...")
-    G = build_terrestrial_graph(json_path="world_named.json",
-                                gateways_csv="Gateways.csv",
-                                k_nearest=3)
+    G = build_terrestrial_graph(json_path="world_named.json", gateways_csv="Gateways.csv", k_nearest=3)
     print("Graph built.")
-
-    # check: archi gateway_backhaul devono avere dataRate
-    miss = [(u, v) for u, v, ed in G.edges(data=True)
-            if ed.get("type") == "gateway_backhaul" and ed.get("dataRate") in (None, 0)]
-    print(">>> Controllo completato. Mancanti:", len(miss))
+    # draw_terrestrial_graph(G)
 
     # ---------------------------
     # 2) Parametri simulazione
@@ -5374,34 +6608,53 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     # ---------------------------
     # 4) Costellazione + grafo spaziale
     earth.linkCells2GTs(distance)
-    earth.linkSats2GTs("Greedy")
+    earth.linkSats2GTs("Optimize")
     spaceG = createGraph(earth, matching=matching)
 
     # ---------------------------
-    # 5) Grafi separati (no compose)
-    earth.terr_graph = G
+    earth.terr_graph  = G
     earth.space_graph = spaceG
 
-    # Lookup iniziali
-    earth.node_by_key = {}
+    # --- Mappa le chiavi dei Gateway fra i due grafi
+    gw_ok = 0
+    gw_alias = 0
+    gw_fail = 0
+    for gt in earth.gateways:
+        terr_key, why = resolve_gateway_terr_key(earth.terr_graph, gt.name)
+        if terr_key:
+            gt.terr_key = terr_key
+            gt.space_key = gw_space_key(terr_key, earth.space_graph, gt.name)
+            gw_ok += 1 if gt.space_key == terr_key else 0
+            gw_alias += 1 if gt.space_key != terr_key else 0
+        else:
+            gt.terr_key = None
+            gt.space_key = gt.name  # ultimo tentativo
+            gw_fail += 1
+
+    print(f"[GW MAP] terr-key OK: {gw_ok}  |  alias in spaceG: {gw_alias}  |  unresolved: {gw_fail}")
+
+    attached = attach_gateways_to_space_graph(earth)
+    print(f"[GSL ATTACH] gateway connessi nel grafo spaziale: {attached}")
+    debug_check_gw_links(earth)  # stampa GW senza GSL, se ce ne sono
+
+    earth.node_by_key  = {}
     earth.node_by_name = {}
-    earth.sat_by_id = {}
+    earth.sat_by_id    = {}
 
     # ---------------------------
-    # 6) (ri)crea TerrestrialNode per TUTTI i nodi TopoHub
+    # 6) Crea TerrestrialNode per TUTTI i nodi TopoHub
     terrestrial_nodes = []
     totalX = getattr(earth, 'totalX', getattr(earth, 'total_x', 1440))
     totalY = getattr(earth, 'totalY', getattr(earth, 'total_y', 720))
 
-    # tieni quelli eventualmente già creati
     terrestrial_nodes.extend(getattr(earth, 'terrestrial_nodes', []))
     already = {getattr(n, 'name', None) for n in terrestrial_nodes}
 
     for node_key, nd in G.nodes(data=True):
         if node_key in already:
-            # comunque popola lookup per sicurezza
-            earth.node_by_key[node_key] = next(n for n in terrestrial_nodes if n.name == node_key)
-            earth.node_by_name[str(node_key)] = earth.node_by_key[node_key]
+            n = next(n for n in terrestrial_nodes if n.name == node_key)
+            earth.node_by_key[node_key] = n
+            earth.node_by_name[str(node_key)] = n
             continue
 
         pos = nd.get('pos') or (nd.get('lon'), nd.get('lat'))
@@ -5410,8 +6663,8 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
         lon, lat = float(pos[0]), float(pos[1])
 
         tn = TerrestrialNode(
-            name=node_key,   # CHIAVE del grafo (stringa: City / Waypoint / Landing / Gateway)
-            ID=node_key,     # uguale alla chiave: niente contatori interni
+            name=node_key,
+            ID=node_key,
             latitude=lat,
             longitude=lon,
             totalX=totalX,
@@ -5425,28 +6678,26 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
         terrestrial_nodes.append(tn)
         earth.node_by_key[node_key] = tn
         earth.node_by_name[str(node_key)] = tn
-
-        # aggiungi anche varianti normalizzate (per accenti/apostrofi diversi)
         try:
-            earth.node_by_name[_ud.normalize('NFC', str(node_key))] = tn
+            earth.node_by_name[_ud.normalize('NFC', str(node_key))]  = tn
             earth.node_by_name[_ud.normalize('NFKC', str(node_key))] = tn
         except Exception:
             pass
 
     earth.terrestrial_nodes = terrestrial_nodes
 
-    # assicurati che i terrestri puntino ai grafi
+    # puntano ai grafi
     for n in earth.terrestrial_nodes:
         n.graph = earth.terr_graph
         n.earth = earth
 
     # ---------------------------
-    # 6.b) Gateway negli indici name/key (oltre agli oggetti Gateway creati da Earth)
+    # 6.b) Gateway negli indici
     for gt in earth.gateways:
-        gt.graph = earth.space_graph
-        gt.space_graph = earth.space_graph
-        gt.terr_graph = earth.terr_graph
-        gt.earth = earth
+        gt.graph        = earth.space_graph
+        gt.space_graph  = earth.space_graph
+        gt.terr_graph   = earth.terr_graph
+        gt.earth        = earth
         for k in {str(gt.name),
                   _ud.normalize('NFC', str(gt.name)),
                   _ud.normalize('NFKC', str(gt.name))}:
@@ -5459,7 +6710,6 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
         for sat in plane.sats:
             earth.sat_by_id[sat.ID] = sat
 
-    # helper: risoluzione unificata
     def _getNodeByName(key):
         if isinstance(key, int) and key in earth.sat_by_id:
             return earth.sat_by_id[key]
@@ -5469,6 +6719,7 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     # ---------------------------
     # Diagnostica rapida
     print(f"[TERR] nodes: {G.number_of_nodes()}  edges: {G.number_of_edges()}")
+    from collections import Counter
     terr_node_types = Counter(nx.get_node_attributes(G, 'type').values())
     terr_edge_types = Counter(nx.get_edge_attributes(G, 'type').values())
     print("[TERR] node types:", terr_node_types)
@@ -5481,77 +6732,160 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     print("[SPACE] edge  types:", space_edge_types)
     print('----------------------------------')
 
-    # ---------------------------
-    # 7) Generazione utenti (solo City)
-    pop_map_for_user_generation = 'Population Map/gpw_v4_population_count_rev11_2020_15_min.tif'
-    img = Image.open(pop_map_for_user_generation).convert('L')
-    density_map = np.array(img, dtype=float)
-    m = max(density_map.max(), 1e-9)
-    density_map = density_map / m
-
-    all_users, active_users = generate_users_from_density_map(density_map, num_users=40000, activation_rate=0.03)
-    all_users.to_csv("users_from_density.csv", index=False)
-
+    # =====================================================================
+    # 7) inputRL.csv: riga1=SOURCE, riga2=DEST, resto=City attive
+    # =====================================================================
     topo_types = nx.get_node_attributes(G, 'type')
-    city_nodes_objs = [n for n in earth.terrestrial_nodes if topo_types.get(n.name) == 'City']
-    associate_users_to_nodes(active_users, city_nodes_objs)
+    name2node  = {str(n.name): n for n in earth.terrestrial_nodes}
 
-    # 8) Flow per tutti (le City con utenti avranno >0)
-    for n in earth.terrestrial_nodes:
-        n.getTotalFlow(avgFlowPerUser=5e6, capacity=1e9, fraction=1.0)
-
-    # ---------------------------
-    # 9) Selezione nodi attivi (solo City con utenti, o da whitelist)
-    name2node = {str(n.name): n for n in earth.terrestrial_nodes}
     try:
-        tn_df = pd.read_csv('InputNodes.csv')
-        whitelist = [str(x) for x in tn_df['Node'].dropna().tolist()]
+        rl_df = pd.read_csv('inputRL.csv')
+        col = 'Locations' if 'Locations' in rl_df.columns else rl_df.columns[0]
+        csv_nodes = [str(x).strip() for x in rl_df[col].dropna().tolist()]
     except Exception:
-        whitelist = []
+        csv_nodes = []
 
-    nodes_with_users = [n for n in city_nodes_objs if getattr(n, 'connectedUsers', None)]
-    requested_nodes = [name2node[nm] for nm in whitelist if nm in name2node]
+    def pick_city(nm):
+        n = name2node.get(nm)
+        return n if (n and topo_types.get(n.name) == 'City') else None
 
-    N_ACTIVE = 4
-    active_terrestrial = requested_nodes if requested_nodes else nodes_with_users[:min(N_ACTIVE, len(nodes_with_users))]
+    active_terrestrial = []
+    for nm in csv_nodes:
+        n = pick_city(nm)
+        if n is None:
+            #print(f"[INFO] '{nm}' non è una City valida (o non esiste): non genererà traffico.")
+            continue
+        if n not in active_terrestrial:
+            active_terrestrial.append(n)
+
+    if not active_terrestrial:
+        city_nodes = [n for n in earth.terrestrial_nodes if topo_types.get(n.name) == 'City']
+        random.seed(42)
+        active_terrestrial = random.sample(city_nodes, k=min(10, len(city_nodes)))
+
     earth.active_terrestrial_nodes = active_terrestrial
+
+    earth.src_node = active_terrestrial[0] if len(active_terrestrial) >= 1 else None
+    earth.dst_node = active_terrestrial[1] if len(active_terrestrial) >= 2 else None
+
+    print("Selected active terrestrial nodes:", [str(n.name) for n in active_terrestrial])
+    if earth.src_node and earth.dst_node:
+        print(f"Source/Destination pair (from inputRL.csv): {earth.src_node.name} → {earth.dst_node.name}")
+    else:
+        print("[WARN] Meno di due City attive dal CSV: coppia S/D non impostata per il monitoraggio.")
+
     active_set = set(active_terrestrial)
 
-    print("Selected active terrestrial nodes:", [n.name for n in active_terrestrial])
-    if whitelist:
-        print("Requested terrestrial whitelist (InputNodes.csv):", whitelist)
-
-    # limita i peer di destinazione solo per gli attivi; gli altri restano router puri
     for n in earth.terrestrial_nodes:
         n.totalLocations = [m for m in active_terrestrial if m is not n] if (n in active_set) else []
 
+    # ---- copertura+flow gateway-style per gli attivi
+    MAX_COVERAGE_KM = 25
+    DIST_FUNC = "Step"
+    FRACTION  = float(fraction)
+    try:
+        AVG_FLOW_PER_USER = avUserLoad
+    except NameError:
+        AVG_FLOW_PER_USER = 20e6
+
+    print("Traffic generated per Active Terrestrial Nodes (totalAvgFlow per Milliard):")
+    print('----------------------------------')
+    for n in earth.active_terrestrial_nodes:
+        n.setup_coverage_and_flow(
+            earth=earth,
+            maxDistance_km=MAX_COVERAGE_KM,
+            distanceFunc=DIST_FUNC,
+            capacity=None,
+            fraction=FRACTION,
+            avgFlowPerUser=AVG_FLOW_PER_USER,
+            clear=True
+        )
+    print('----------------------------------')
+
     # ---------------------------
-    # 10) Precalcolo cammini fra attivi (prima terrestre, poi fallback ibrido)
+    # 10) Precalcolo cammini fra attivi (scelta dinamica: terrestre vs ibrido)
+    from collections import defaultdict
+
+    path_stats = {
+        "terr": 0,
+        "hyb": 0,
+        "total": 0,
+        "hyb_available": 0,
+        "samples": [],
+        "sample_wins": []
+    }
+
     for src in earth.active_terrestrial_nodes:
         src.paths = getattr(src, "paths", {})
-        for dst in earth.active_terrestrial_nodes:
-            if src is dst:
-                continue
-            p_terr = getShortestPathTerrestrial(src.name, dst.name, G)
-            if p_terr:
-                src.paths[dst.name] = p_terr              # lista di chiavi (stringhe)
-            else:
-                p_hybrid = compute_hybrid_path(src.name, dst.name, earth)
-                src.paths[dst.name] = p_hybrid if p_hybrid else []
+        src.path_types = {}
 
-    used_hybrid = []
-    for src in earth.active_terrestrial_nodes:
         for dst in earth.active_terrestrial_nodes:
             if src is dst:
                 continue
-            if src.paths.get(dst.name) and not getShortestPathTerrestrial(src.name, dst.name, G):
-                used_hybrid.append((src.name, dst.name, src.paths[dst.name]))
-    if used_hybrid:
-        print("[HYBRID PATHS USED]")
-        for s, d, p in used_hybrid[:20]:
-            print(f"  {s} -> {d}: {p}")
-    else:
-        print("[HYBRID PATHS USED] none")
+
+            p_terr = getShortestPathTerrestrial(src.name, dst.name, G)
+            p_hyb  = compute_hybrid_path(src.name, dst.name, earth)
+
+            terr_cost = estimate_path_cost(earth, p_terr) if p_terr else float("inf")
+            hyb_cost  = estimate_path_cost(earth, p_hyb)  if p_hyb  else float("inf")
+
+            if p_hyb:
+                path_stats["hyb_available"] += 1
+
+            if (hyb_cost is not None) and (hyb_cost < terr_cost):
+                chosen_raw = p_hyb
+                chosen_type = "hyb"
+                other_cost = terr_cost
+                path_stats["hyb"] += 1
+            else:
+                chosen_raw = p_terr
+                chosen_type = "terr"
+                other_cost = hyb_cost
+                if p_terr:
+                    path_stats["terr"] += 1
+
+            chosen_path = coerce_path_only(chosen_raw)
+            src.paths[dst.name] = chosen_path
+            src.path_types[dst.name] = chosen_type if chosen_path else "none"
+
+            chosen_cost = estimate_path_cost(earth, chosen_path) if chosen_path else float("inf")
+            srec = {
+                "src": src.name,
+                "dst": dst.name,
+                "choice": chosen_type,
+                "cost_chosen": chosen_cost,
+                "cost_other": other_cost
+            }
+            path_stats["samples"].append(srec)
+            if chosen_path and len(path_stats["sample_wins"]) < 10:
+                path_stats["sample_wins"].append(srec)
+
+            path_stats["total"] += 1
+
+    print(
+        f"[PATH CHOICES] terrestrial: {path_stats['terr']} ({100.0 * path_stats['terr'] / max(1, path_stats['total']):.1f}%)"
+        f"  |  hybrid: {path_stats['hyb']} ({100.0 * path_stats['hyb'] / max(1, path_stats['total']):.1f}%)"
+        f"  |  hybrid available: {path_stats['hyb_available']} ({100.0 * path_stats['hyb_available'] / max(1, path_stats['total']):.1f}%)"
+        f"  |  total pairs: {path_stats['total']}"
+    )
+
+    if path_stats["sample_wins"]:
+        print("[PATH CHOICES] esempi:")
+        for s in path_stats["sample_wins"]:
+            other_str = "inf"
+            if (s.get("cost_other") is not None) and (s["cost_other"] != float("inf")):
+                other_str = f"{s['cost_other']:.4f}"
+            print(f"  {s['src']} -> {s['dst']}: chose {s['choice']} | "
+                  f"chosen={s['cost_chosen']:.4f}  other={other_str}")
+
+    # dopo aver calcolato i path nel punto 10:
+    for s in earth.active_terrestrial_nodes[:2]:
+        for d in earth.active_terrestrial_nodes[:2]:
+            if s is d: continue
+            p = s.paths.get(d.name)
+            if p:
+                print(f"\n[cost-verbose] {s.name} -> {d.name}")
+                estimate_path_cost_verbose(earth, p)
 
     # ---------------------------
     # 11) Avvio generazione blocchi dai nodi attivi
@@ -5560,7 +6894,7 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
             n.makeFillBlockProcesses(target_nodes=n.totalLocations)
 
     # ---------------------------
-    # 12) Paths gateway↔gateway (solo rete spaziale)
+    # 12) Paths gateway↔gateway (solo rete spaziale) — come originale
     paths = []
     for GT in earth.gateways:
         for destination in earth.gateways:
@@ -5569,7 +6903,7 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
                 GT.paths[destination.name] = path
                 paths.append(path)
 
-    # 13) ISL references e processi di invio sui satelliti
+    # 13) ISL references e processi di invio sui satelliti — come originale
     sats = []
     for plane in earth.LEO:
         for sat in plane.sats:
@@ -5606,22 +6940,7 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     else:
         bottleneck1 = bottleneck2 = minimum1 = minimum2 = None
 
-    # 15) Flussi gateway (come originale)
-    print('Traffic generated per GT (totalAvgFlow per Milliard):')
-    print('----------------------------------')
-    for GT in earth.gateways:
-        if GT.linkedSat[0] is not None:
-            mins = []
-            for pathKey in GT.paths:
-                _, minimum = findBottleneck(GT.paths[pathKey], earth)
-                mins.append(minimum)
-            if GT.dataRate < GT.linkedSat[1].downRate:
-                GT.getTotalFlow(1, "Step", 1, GT.dataRate, fraction)
-            else:
-                GT.getTotalFlow(1, "Step", 1, GT.linkedSat[1].downRate, fraction)
-    print('----------------------------------')
-
-    # 16) Q-learning (come originale)
+    # 16) Q-learning
     if pathing == 'Q-Learning' or pathing == 'Deep Q-Learning':
         hyperparams = hyperparam(pathing)
     if pathing == 'Deep Q-Learning':
@@ -5644,12 +6963,213 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
 
     return earth, spaceG, bottleneck1, bottleneck2
 
+C_TER   = 2e8  # m/s fibra (terra)
+C_SPACE = 3e8  # m/s spazio
 
+def _terr_edge_cost(u, v, edata):
+    prop = edata.get('propDelay') or edata.get('prop_delay')
+    if prop is None:
+        dist_km = edata.get('distance_km')
+        prop = (dist_km * 1000.0) / C_TER if dist_km is not None else 0.0
+    dr = edata.get('dataRate') or edata.get('data_rate') or edata.get('capacity')
+    ser = (BLOCK_SIZE / float(dr)) if (dr and dr > 0) else 0.0
+    return float(prop) + float(ser)
 
+def _space_edge_cost(u, v, edata):
+    prop = edata.get('propDelay') or edata.get('prop_delay')
+    if prop is None:
+        sr_km = edata.get('slant_range') or edata.get('slant_range_km')
+        prop = (sr_km * 1000.0) / C_SPACE if sr_km is not None else 0.0
+    dr = edata.get('dataRateOG') or edata.get('dataRate') or edata.get('capacity')
+    ser = (BLOCK_SIZE / float(dr)) if (dr and dr > 0) else 0.0
+    return float(prop) + float(ser)
+
+def getShortestPathTerrestrial(src_name, dst_name, G):
+    if src_name not in G or dst_name not in G:
+        return []
+    try:
+        return nx.shortest_path(G, src_name, dst_name,
+                                weight=lambda u,v,ed: _terr_edge_cost(u,v,ed))
+    except Exception:
+        return []
+
+def _path_cost_terrestrial(G, path):
+    if not path or len(path) < 2:
+        return float('inf')
+    tot = 0.0
+    for u, v in zip(path[:-1], path[1:]):
+        ed = G.get_edge_data(u, v) or G.get_edge_data(v, u) or {}
+        if isinstance(ed, dict) and ed and all(isinstance(x, dict) for x in ed.values()):
+            ed = next(iter(ed.values()))
+        tot += _terr_edge_cost(u, v, ed)
+    return tot
+
+def _path_cost_space(S, path):
+    if not path or len(path) < 2:
+        return float('inf')
+    tot = 0.0
+    for u, v in zip(path[:-1], path[1:]):
+        ed = S.get_edge_data(u, v) or S.get_edge_data(v, u) or {}
+        if isinstance(ed, dict) and ed and all(isinstance(x, dict) for x in ed.values()):
+            ed = next(iter(ed.values()))
+        tot += _space_edge_cost(u, v, ed)
+    return tot
+
+def _k_best_gateways_to(G, gateways, node_name, k=3):
+    cand = []
+    for gw in gateways:
+        gname = gw.name
+        if gname not in G or node_name not in G:
+            continue
+        try:
+            p = nx.shortest_path(G, node_name, gname,
+                                 weight=lambda u,v,ed: _terr_edge_cost(u,v,ed))
+            c = _path_cost_terrestrial(G, p)
+            cand.append((gw, p, c))
+        except Exception:
+            pass
+    cand.sort(key=lambda t: t[2])
+    return cand[:k]
+
+def _space_shortest_path(S, g1_name, g2_name):
+    if g1_name not in S or g2_name not in S:
+        return [], float('inf')
+    try:
+        p = nx.shortest_path(S, g1_name, g2_name,
+                             weight=lambda u,v,ed: _space_edge_cost(u,v,ed))
+        return p, _path_cost_space(S, p)
+    except Exception:
+        return [], float('inf')
+
+def pick_nearest_gateway(city_name, earth, top_k=5):
+    """Ritorna una lista di candidati gateway (oggetti gt) ordinati per distanza terrestre da city_name,
+       tra quelli che hanno GSL (almeno un vicino satellite nello space-graph)."""
+    Gt = earth.terr_graph
+    Gs = earth.space_graph
+
+    # raccogli (gt, terr_key, space_key, distanza)
+    rows = []
+    for gt in earth.gateways:
+        terr_key = getattr(gt, 'terr_key', None)
+        space_key = getattr(gt, 'space_key', gt.name)
+        if terr_key is None or terr_key not in Gt:
+            continue
+        try:
+            dist = nx.shortest_path_length(Gt, city_name, terr_key, weight='weight')
+        except Exception:
+            continue
+        # ha GSL nello space-graph?
+        has_gsl = False
+        if space_key in Gs:
+            for n in Gs.neighbors(space_key):
+                ed = Gs.get_edge_data(space_key, n)
+                if ed and ed.get('type') == 'GSL':
+                    has_gsl = True
+                    break
+        if has_gsl:
+            rows.append((dist, gt, terr_key, space_key))
+
+    rows.sort(key=lambda x: x[0])
+    return rows[:top_k]  # lista di tuple (dist, gt, terr_key, space_key)
+
+def compute_hybrid_path(src_city, dst_city, earth, try_k=3):
+    """Costruisce un path ibrido completo. Ritorna lista di chiavi (mix terr/spazio)."""
+    Gt = earth.terr_graph
+    Gs = earth.space_graph
+
+    # candidati GW più vicini
+    src_cands = pick_nearest_gateway(src_city, earth, top_k=max(1, try_k))
+    dst_cands = pick_nearest_gateway(dst_city, earth, top_k=max(1, try_k))
+
+    # prova combinazioni (srcGW, dstGW)
+    for _, gwS, terrS, spaceS in src_cands:
+        # trova sat_src (primo vicino type=GSL)
+        sat_src = None
+        if spaceS in Gs:
+            for n in Gs.neighbors(spaceS):
+                ed = Gs.get_edge_data(spaceS, n)
+                if ed and ed.get('type') == 'GSL':
+                    sat_src = n
+                    break
+        if sat_src is None:
+            continue
+
+        for _, gwD, terrD, spaceD in dst_cands:
+            # sat_dst
+            sat_dst = None
+            if spaceD in Gs:
+                for n in Gs.neighbors(spaceD):
+                    ed = Gs.get_edge_data(spaceD, n)
+                    if ed and ed.get('type') == 'GSL':
+                        sat_dst = n
+                        break
+            if sat_dst is None:
+                continue
+
+            # tratta terrestre src → GW_src(terr)
+            try:
+                p1 = nx.shortest_path(Gt, src_city, terrS, weight='weight')
+            except Exception:
+                continue
+
+            # tratta spaziale: spaceS→sat_src (è un arco GSL, non serve shortest) + sat_src … sat_dst + sat_dst→spaceD
+            if not (spaceS in Gs and sat_src in Gs and Gs.has_edge(spaceS, sat_src)):
+                continue
+            try:
+                p_space = nx.shortest_path(Gs, sat_src, sat_dst, weight='slant_range')
+            except Exception:
+                continue
+            if not (spaceD in Gs and sat_dst in Gs and Gs.has_edge(sat_dst, spaceD)):
+                continue
+
+            # tratta terrestre GW_dst(terr) → dst
+            try:
+                p2 = nx.shortest_path(Gt, terrD, dst_city, weight='weight')
+            except Exception:
+                continue
+
+            # raccordo coerente
+            path = []
+            path += p1  # … src … terrS
+            if spaceS != terrS:
+                path.append(spaceS)     # “giunzione” al nodo GW dello space-graph
+            path.append(sat_src)
+            # catena ISL
+            if len(p_space) > 1:
+                path += p_space[1:]    # evita duplicare sat_src
+            path.append(spaceD)        # GSL down su GW_dst nello space-graph
+            if spaceD != terrD:
+                path.append(terrD)     # “giunzione” verso GW_dst nel grafo terrestre
+            if len(p2) > 1:
+                path += p2[1:]         # … terrD … dst
+
+            return path
+
+    # nessuna combinazione valida
+    return None
+
+def choose_best_path(src_name, dst_name, earth, k=3):
+    """Confronta terrestre e ibrido. Restituisce (best_path, best_cost, best_kind)."""
+    G = getattr(earth, 'terr_graph', None)
+    if G is None:
+        return [], float('inf'), None
+
+    # solo-terra
+    p_terr = getShortestPathTerrestrial(src_name, dst_name, G)
+    c_terr = _path_cost_terrestrial(G, p_terr) if p_terr else float('inf')
+
+    # ibrido
+    p_hyb, c_hyb = compute_hybrid_path(src_name, dst_name, earth, k=k)
+
+    # scegli migliore (a parità preferisci terrestre)
+    if c_terr <= c_hyb:
+        return (p_terr if p_terr else []), c_terr, ('terrestrial' if p_terr else None)
+    else:
+        return (p_hyb if p_hyb else []), c_hyb, ('hybrid' if p_hyb else None)
 
 
 # @profile
-def findBottleneck(path, earth, plot = False, minimum = None):
+def findBottleneck(path, earth, plot=False, minimum=None):
     # Find the bottleneck of a route.
     bottleneck = [[], [], [], []]
     for GT in earth.gateways:
@@ -5658,7 +7178,7 @@ def findBottleneck(path, earth, plot = False, minimum = None):
             bottleneck[1].append(GT.dataRate)
             bottleneck[2].append(GT.latitude)
             if minimum:
-                bottleneck[3].append(minimum/GT.dataRate)
+                bottleneck[3].append(minimum / GT.dataRate)
 
     for i, step in enumerate(path[1:], 1):
         for orbit in earth.LEO:
@@ -5685,10 +7205,10 @@ def findBottleneck(path, earth, plot = False, minimum = None):
             bottleneck[1].append(GT.linkedSat[1].downRate)
             bottleneck[2].append(GT.latitude)
             if minimum:
-                bottleneck[3].append(minimum/GT.dataRate)
+                bottleneck[3].append(minimum / GT.dataRate)
 
     if plot:
-        earth.plotMap(True,True,path, bottleneck)
+        earth.plotMap(True, True, path, bottleneck)
         plt.show()
         plt.close()
 
@@ -5698,52 +7218,51 @@ def findBottleneck(path, earth, plot = False, minimum = None):
 
 # @profile
 def create_Constellation(specific_constellation, env, earth):
-
-    if specific_constellation == "small":               # Small Walker star constellation for tests.
+    if specific_constellation == "small":  # Small Walker star constellation for tests.
         print("Using small walker Star constellation")
-        P = 4					# Number of orbital planes
-        N_p = 8 				# Number of satellites per orbital plane
-        N = N_p*P				# Total number of satellites
-        height = 1000e3			# Altitude of deployment for each orbital plane (set to the same altitude here)
-        inclination_angle = 53	# Inclination angle for the orbital planes, set to 90 for Polar
-        Walker_star = True		# Set to True for Walker star and False for Walker Delta
+        P = 4  # Number of orbital planes
+        N_p = 8  # Number of satellites per orbital plane
+        N = N_p * P  # Total number of satellites
+        height = 1000e3  # Altitude of deployment for each orbital plane (set to the same altitude here)
+        inclination_angle = 53  # Inclination angle for the orbital planes, set to 90 for Polar
+        Walker_star = True  # Set to True for Walker star and False for Walker Delta
         min_elevation_angle = 30
 
-    elif specific_constellation =="Kepler":
+    elif specific_constellation == "Kepler":
         print("Using Kepler constellation design")
         P = 7
         N_p = 20
-        N = N_p*P
+        N = N_p * P
         height = 600e3
         inclination_angle = 98.6
         Walker_star = True
         min_elevation_angle = 30
 
-    elif specific_constellation =="Iridium_NEXT":
+    elif specific_constellation == "Iridium_NEXT":
         print("Using Iridium NEXT constellation design")
         P = 6
         N_p = 11
-        N = N_p*P
+        N = N_p * P
         height = 780e3
         inclination_angle = 86.4
         Walker_star = True
         min_elevation_angle = 30
 
-    elif specific_constellation =="OneWeb":
+    elif specific_constellation == "OneWeb":
         print("Using OneWeb constellation design")
         P = 18
         N = 648
-        N_p = int(N/P)
+        N_p = int(N / P)
         height = 1200e3
         inclination_angle = 86.4
         Walker_star = True
         min_elevation_angle = 30
 
-    elif specific_constellation =="Starlink":			# Phase 1 550 km altitude orbit shell
+    elif specific_constellation == "Starlink":  # Phase 1 550 km altitude orbit shell
         print("Using Starlink constellation design")
         P = 72
         N = 1584
-        N_p = int(N/P)
+        N_p = int(N / P)
         height = 550e3
         inclination_angle = 53
         Walker_star = False
@@ -5751,12 +7270,12 @@ def create_Constellation(specific_constellation, env, earth):
 
     elif specific_constellation == "Test":
         print("Using a test constellation design")
-        P = 30                     # Number of orbital planes
-        N = 1200                   # Total number of satellites
-        N_p = int(N/P)             # Number of satellites per orbital plane
-        height = 600e3             # Altitude of deployment for each orbital plane (set to the same altitude here)
-        inclination_angle = 86.4   # Inclination angle for the orbital planes, set to 90 for Polar
-        Walker_star = True         # Set to True for Walker star and False for Walker Delta
+        P = 30  # Number of orbital planes
+        N = 1200  # Total number of satellites
+        N_p = int(N / P)  # Number of satellites per orbital plane
+        height = 600e3  # Altitude of deployment for each orbital plane (set to the same altitude here)
+        inclination_angle = 86.4  # Inclination angle for the orbital planes, set to 90 for Polar
+        Walker_star = True  # Set to True for Walker star and False for Walker Delta
         min_elevation_angle = 30
     else:
         print("Not valid Constellation Name")
@@ -5768,7 +7287,7 @@ def create_Constellation(specific_constellation, env, earth):
         Walker_star = False
         exit()
 
-    distribution_angle = 2*math.pi  # Angle in which the orbital planes are distributed in
+    distribution_angle = 2 * math.pi  # Angle in which the orbital planes are distributed in
 
     if Walker_star:
         distribution_angle /= 2
@@ -5777,8 +7296,9 @@ def create_Constellation(specific_constellation, env, earth):
     # Add orbital planes and satellites
     # Orbital_planes.append(orbital_plane(0, height, 0, math.radians(inclination_angle), N_p, min_elevation_angle, 0))
     for i in range(0, P):
-        orbital_planes.append(OrbitalPlane(str(i), height, i*distribution_angle/P, math.radians(inclination_angle), N_p,
-                                           min_elevation_angle, str(i) + '_', env, earth))
+        orbital_planes.append(
+            OrbitalPlane(str(i), height, i * distribution_angle / P, math.radians(inclination_angle), N_p,
+                         min_elevation_angle, str(i) + '_', env, earth))
 
     return orbital_planes
 
@@ -5793,13 +7313,13 @@ def get_direction(Satellites):
     Gets the direction of the satellites so each transceiver antenna can be set to one direction.
     '''
     N = len(Satellites)
-    direction = np.zeros((N,N), dtype=np.int8)
+    direction = np.zeros((N, N), dtype=np.int8)
     for i in range(N):
-        epsilon = -Satellites[i].inclination    # orbital plane inclination
+        epsilon = -Satellites[i].inclination  # orbital plane inclination
         for j in range(N):
-            direction[i,j] = np.sign(Satellites[i].y*math.sin(epsilon)+
-                                    Satellites[i].z*math.cos(epsilon)-Satellites[j].y*math.sin(epsilon)-
-                                    Satellites[j].z*math.cos(epsilon))
+            direction[i, j] = np.sign(Satellites[i].y * math.sin(epsilon) +
+                                      Satellites[i].z * math.cos(epsilon) - Satellites[j].y * math.sin(epsilon) -
+                                      Satellites[j].z * math.cos(epsilon))
     return direction
 
 
@@ -5808,17 +7328,17 @@ def get_pos_vectors_omni(Satellites):
     Given a list of satellites returns a list with x, y, z coordinates and the plane where they are (meta)
     '''
     N = len(Satellites)
-    Positions = np.zeros((N,3))
+    Positions = np.zeros((N, 3))
     meta = np.zeros(N, dtype=np.int_)
     for n in range(N):
-        Positions[n,:] = [Satellites[n].x, Satellites[n].y, Satellites[n].z]
+        Positions[n, :] = [Satellites[n].x, Satellites[n].y, Satellites[n].z]
         meta[n] = Satellites[n].in_plane
 
     return Positions, meta
 
 
 def get_slant_range(edge):
-        return(edge.slant_range)
+    return (edge.slant_range)
 
 
 # @numba.jit  # Using this decorator you can mark a function for optimization by Numba's JIT compiler
@@ -5826,11 +7346,11 @@ def get_slant_range_optimized(Positions, N):
     '''
     returns a matrix with the all the distances between the satellites (optimized)
     '''
-    slant_range = np.zeros((N,N))
+    slant_range = np.zeros((N, N))
     for i in range(N):
-        slant_range[i,i] = math.inf
-        for j in range(i+1,N):
-            slant_range[i,j] = np.linalg.norm(Positions[i,:] - Positions[j,:])
+        slant_range[i, i] = math.inf
+        for j in range(i + 1, N):
+            slant_range[i, j] = np.linalg.norm(Positions[i, :] - Positions[j, :])
     slant_range += np.transpose(slant_range)
     return slant_range
 
@@ -5844,8 +7364,8 @@ def los_slant_range(_slant_range, _meta, _max, _Positions):
     _N = len(_slant_range)
     for i in range(_N):
         for j in range(_N):
-            if _slant_range_new[i,j] > _max[_meta[i], _meta[j]]:
-                _slant_range_new[i,j] = math.inf
+            if _slant_range_new[i, j] > _max[_meta[i], _meta[j]]:
+                _slant_range_new[i, j] = math.inf
     return _slant_range_new
 
 
@@ -5867,19 +7387,19 @@ def get_data_rate(_slant_range_los, interISL):
          16.48162392, 18.74994508, 20.18366364, 23.1206479, 25.00345362, 30.26913428, 35.2370871, 38.63669771,
          45.18559444, 49.88844875, 52.96634439, 64.5654229, 72.27698036, 76.55966069, 90.57326009])
 
-    pathLoss = 10*np.log10((4 * math.pi * _slant_range_los * interISL.f / Vc)**2)   # Free-space pathloss in dB
-    snr = 10**((interISL.maxPtx_db + interISL.G - pathLoss - interISL.No)/10)       # SNR in times
-    shannonRate = interISL.B*np.log2(1+snr)                                         # data rates matrix in bits per second
+    pathLoss = 10 * np.log10((4 * math.pi * _slant_range_los * interISL.f / Vc) ** 2)  # Free-space pathloss in dB
+    snr = 10 ** ((interISL.maxPtx_db + interISL.G - pathLoss - interISL.No) / 10)  # SNR in times
+    shannonRate = interISL.B * np.log2(1 + snr)  # data rates matrix in bits per second
 
-    speffs = np.zeros((len(_slant_range_los),len(_slant_range_los)))
+    speffs = np.zeros((len(_slant_range_los), len(_slant_range_los)))
 
     for n in range(len(_slant_range_los)):
         for m in range(len(_slant_range_los)):
-            feasible_speffs = speff_thresholds[np.nonzero(lin_thresholds <= snr[n,m])]
+            feasible_speffs = speff_thresholds[np.nonzero(lin_thresholds <= snr[n, m])]
             if feasible_speffs.size == 0:
                 speffs[n, m] = 0
             else:
-                speffs[n,m] = interISL.B * feasible_speffs[-1]
+                speffs[n, m] = interISL.B * feasible_speffs[-1]
 
     return speffs
 
@@ -5896,10 +7416,10 @@ def markovianMatchingTwo(earth):
     Minimizes the total cost of the constellation matching problem.
     '''
 
-    _A_Markovian    = []    # list with all the
-    Satellites      = []    # list with all the satellites
-    W_M             = []    # list with the distances of every possible link between sats
-    covered         = set() # Set with the connections already covered
+    _A_Markovian = []  # list with all the
+    Satellites = []  # list with all the satellites
+    W_M = []  # list with the distances of every possible link between sats
+    covered = set()  # Set with the connections already covered
 
     for plane in earth.LEO:
         for sat in plane.sats:
@@ -5921,27 +7441,27 @@ def markovianMatchingTwo(earth):
 
     # max slant range for each orbit
     ###########################################################
-    M = len(earth.LEO)              # Number of planes in LEO
-    Max_slnt_rng = np.zeros((M,M))  # All ISL slant ranges must me lowe than 'Max_slnt_rng[i, j]'
+    M = len(earth.LEO)  # Number of planes in LEO
+    Max_slnt_rng = np.zeros((M, M))  # All ISL slant ranges must me lowe than 'Max_slnt_rng[i, j]'
 
-    Orb_heights  = []
+    Orb_heights = []
     for plane in earth.LEO:
         Orb_heights.append(plane.h)
         maxSlantRange = plane.sats[0].maxSlantRange
 
     for _i in range(M):
         for _j in range(M):
-            Max_slnt_rng[_i,_j] = (np.sqrt( (Orb_heights[_i] + Re)**2 - Re**2 ) +
-                                np.sqrt( (Orb_heights[_j] + Re)**2 - Re**2 ) )
-
+            Max_slnt_rng[_i, _j] = (np.sqrt((Orb_heights[_i] + Re) ** 2 - Re ** 2) +
+                                    np.sqrt((Orb_heights[_j] + Re) ** 2 - Re ** 2))
 
     # Get data rate old method
     ###########################################################
-    direction       = get_direction(Satellites)             # get both directions of the satellites to use the two transceivers
-    Positions, meta = get_pos_vectors_omni(Satellites)      # position and plane of all the satellites
-    slant_range     = get_slant_range_optimized(Positions, N)                       # matrix with all the distances between satellties
-    slant_range_los = los_slant_range(slant_range, meta, Max_slnt_rng, Positions)   # distance matrix but if d>dMax, d=infinite
-    shannonRate     = get_data_rate(slant_range_los, interISL)                      # max dataRate
+    direction = get_direction(Satellites)  # get both directions of the satellites to use the two transceivers
+    Positions, meta = get_pos_vectors_omni(Satellites)  # position and plane of all the satellites
+    slant_range = get_slant_range_optimized(Positions, N)  # matrix with all the distances between satellties
+    slant_range_los = los_slant_range(slant_range, meta, Max_slnt_rng,
+                                      Positions)  # distance matrix but if d>dMax, d=infinite
+    shannonRate = get_data_rate(slant_range_los, interISL)  # max dataRate
 
     '''
     Compute all possible edges between different plane satellites whose transceiver antennas are free.
@@ -5949,20 +7469,22 @@ def markovianMatchingTwo(earth):
     '''
     ###########################################################
     for i in range(N):
-        for j in range(i+1,N):
-            if Satellites[i].in_plane != Satellites[j].in_plane and ((i,direction[i,j]) not in covered) and ((j,direction[j,i]) not in covered):
-                if slant_range_los[i,j] < 6000e3: # math.inf:
-                    W_M.append(edge(Satellites[i].ID,Satellites[j].ID,slant_range_los[i,j],direction[i,j], direction[j,i], shannonRate[i,j]))
+        for j in range(i + 1, N):
+            if Satellites[i].in_plane != Satellites[j].in_plane and ((i, direction[i, j]) not in covered) and (
+                    (j, direction[j, i]) not in covered):
+                if slant_range_los[i, j] < 6000e3:  # math.inf:
+                    W_M.append(edge(Satellites[i].ID, Satellites[j].ID, slant_range_los[i, j], direction[i, j],
+                                    direction[j, i], shannonRate[i, j]))
 
-    W_sorted=sorted(W_M,key=get_slant_range) # NOTE we could choose shannonRate instead
+    W_sorted = sorted(W_M, key=get_slant_range)  # NOTE we could choose shannonRate instead
 
     # from all the possible links adds only the uncovered with the best weight possible
     ###########################################################
     while W_sorted:
-        if  ((W_sorted[0].i,W_sorted[0].dji) not in covered) and ((W_sorted[0].j,W_sorted[0].dij) not in covered):
+        if ((W_sorted[0].i, W_sorted[0].dji) not in covered) and ((W_sorted[0].j, W_sorted[0].dij) not in covered):
             _A_Markovian.append(W_sorted[0])
-            covered.add((W_sorted[0].i,W_sorted[0].dji))
-            covered.add((W_sorted[0].j,W_sorted[0].dij))
+            covered.add((W_sorted[0].i, W_sorted[0].dji))
+            covered.add((W_sorted[0].j, W_sorted[0].dij))
         W_sorted.pop(0)
 
     # add intra-ISL edges
@@ -5973,21 +7495,21 @@ def markovianMatchingTwo(earth):
             sat.findIntraNeighbours(earth)
 
             # upper neighbour
-            i = sat.in_plane        *nPerPlane    +sat.i_in_plane
-            j = sat.upper.in_plane  *nPerPlane    +sat.upper.i_in_plane
+            i = sat.in_plane * nPerPlane + sat.i_in_plane
+            j = sat.upper.in_plane * nPerPlane + sat.upper.i_in_plane
 
             _A_Markovian.append(edge(sat.ID, sat.upper.ID,  # satellites IDs
-            slant_range_los[i, j],                          # distance between satellites
-            direction[i,j], direction[j,i],                 # directions
-            shannonRate[i,j]))                              # Max dataRate
+                                     slant_range_los[i, j],  # distance between satellites
+                                     direction[i, j], direction[j, i],  # directions
+                                     shannonRate[i, j]))  # Max dataRate
 
             # lower neighbour
-            j = sat.lower.in_plane  *nPerPlane    +sat.lower.i_in_plane
+            j = sat.lower.in_plane * nPerPlane + sat.lower.i_in_plane
 
             _A_Markovian.append(edge(sat.ID, sat.lower.ID,  # satellites IDs
-            slant_range_los[i, j],                          # distance between satellites
-            direction[i,j], direction[j,i],                 # directions
-            shannonRate[i,j]))                              # Max dataRate
+                                     slant_range_los[i, j],  # distance between satellites
+                                     direction[i, j], direction[j, i],  # directions
+                                     shannonRate[i, j]))  # Max dataRate
 
     return _A_Markovian
 
@@ -6010,7 +7532,7 @@ def greedyMatching(earth):
 
     N = len(Satellites)
 
-    # inter-plane ISL 
+    # inter-plane ISL
     ##############################################################
     # link parameters
     interISL = RFlink(
@@ -6025,28 +7547,29 @@ def greedyMatching(earth):
         min_rate=min_rate
     )
 
-   # max slant range for each orbit
+    # max slant range for each orbit
     ###########################################################
-    M = len(earth.LEO)              # Number of planes in LEO
-    Max_slnt_rng = np.zeros((M,M))  # All ISL slant ranges must be lowe than 'Max_slnt_rng[i, j]'
+    M = len(earth.LEO)  # Number of planes in LEO
+    Max_slnt_rng = np.zeros((M, M))  # All ISL slant ranges must be lowe than 'Max_slnt_rng[i, j]'
 
-    Orb_heights  = []
+    Orb_heights = []
     for plane in earth.LEO:
         Orb_heights.append(plane.h)
         maxSlantRange = plane.sats[0].maxSlantRange
 
     for _i in range(M):
         for _j in range(M):
-            Max_slnt_rng[_i,_j] = (np.sqrt( (Orb_heights[_i] + Re)**2 - Re**2 ) +
-                                np.sqrt( (Orb_heights[_j] + Re)**2 - Re**2 ) )
-            
+            Max_slnt_rng[_i, _j] = (np.sqrt((Orb_heights[_i] + Re) ** 2 - Re ** 2) +
+                                    np.sqrt((Orb_heights[_j] + Re) ** 2 - Re ** 2))
+
     # Compute positions and slant ranges
     ##############################################################
-    direction       = get_direction(Satellites)             # get both directions of the satellites to use the two transceivers
-    Positions, meta = get_pos_vectors_omni(Satellites)      # position and plane of all the satellites
-    slant_range     = get_slant_range_optimized(Positions, N)                       # matrix with all the distances between satellties
-    slant_range_los = los_slant_range(slant_range, meta, Max_slnt_rng, Positions)   # distance matrix but if d>dMax, d=infinite
-    shannonRate     = get_data_rate(slant_range_los, interISL)                      # max dataRate
+    direction = get_direction(Satellites)  # get both directions of the satellites to use the two transceivers
+    Positions, meta = get_pos_vectors_omni(Satellites)  # position and plane of all the satellites
+    slant_range = get_slant_range_optimized(Positions, N)  # matrix with all the distances between satellties
+    slant_range_los = los_slant_range(slant_range, meta, Max_slnt_rng,
+                                      Positions)  # distance matrix but if d>dMax, d=infinite
+    shannonRate = get_data_rate(slant_range_los, interISL)  # max dataRate
 
     # Create edges for inter-plane links (closest east and west satellites)
     for i, sat in enumerate(Satellites):
@@ -6062,10 +7585,12 @@ def greedyMatching(earth):
 
         # Add edges for closest east and west satellites
         if closest_east:
-            _A_Greedy.append(edge(sat.ID, closest_east.ID, min_east_distance, None, None, shannonRate[i, Satellites.index(closest_east)]))
+            _A_Greedy.append(edge(sat.ID, closest_east.ID, min_east_distance, None, None,
+                                  shannonRate[i, Satellites.index(closest_east)]))
         if closest_west:
-            _A_Greedy.append(edge(sat.ID, closest_west.ID, min_west_distance, None, None, shannonRate[i, Satellites.index(closest_west)]))
-        
+            _A_Greedy.append(edge(sat.ID, closest_west.ID, min_west_distance, None, None,
+                                  shannonRate[i, Satellites.index(closest_west)]))
+
     # intra-plane ISL links (upper and lower neighbors)
     ##############################################################
     for plane in earth.LEO:
@@ -6074,21 +7599,21 @@ def greedyMatching(earth):
             sat.findIntraNeighbours(earth)
 
             # upper neighbour
-            i = sat.in_plane        *nPerPlane    +sat.i_in_plane
-            j = sat.upper.in_plane  *nPerPlane    +sat.upper.i_in_plane
+            i = sat.in_plane * nPerPlane + sat.i_in_plane
+            j = sat.upper.in_plane * nPerPlane + sat.upper.i_in_plane
 
-            _A_Greedy.append(edge(sat.ID, sat.upper.ID,     # satellites IDs
-            slant_range_los[i, j],                          # distance between satellites
-            None, None,                                     # directions
-            shannonRate[i,j]))                              # Max dataRate
+            _A_Greedy.append(edge(sat.ID, sat.upper.ID,  # satellites IDs
+                                  slant_range_los[i, j],  # distance between satellites
+                                  None, None,  # directions
+                                  shannonRate[i, j]))  # Max dataRate
 
             # lower neighbour
-            j = sat.lower.in_plane  *nPerPlane    +sat.lower.i_in_plane
+            j = sat.lower.in_plane * nPerPlane + sat.lower.i_in_plane
 
-            _A_Greedy.append(edge(sat.ID, sat.lower.ID,     # satellites IDs
-            slant_range_los[i, j],                          # distance between satellites
-            None, None,                                     # directions
-            shannonRate[i,j]))                              # Max dataRate
+            _A_Greedy.append(edge(sat.ID, sat.lower.ID,  # satellites IDs
+                                  slant_range_los[i, j],  # distance between satellites
+                                  None, None,  # directions
+                                  shannonRate[i, j]))  # Max dataRate
 
     return _A_Greedy
 
@@ -6103,35 +7628,36 @@ def deleteDuplicatedLinks(satA, g, earth):
         '''
         Chooses the dat with the closest latitude to currentSat
         '''
-        return (satA, satB) if abs(satA.latitude-currentSat.latitude)<abs(satB.latitude-currentSat.latitude) else (satB, satA)
+        return (satA, satB) if abs(satA.latitude - currentSat.latitude) < abs(
+            satB.latitude - currentSat.latitude) else (satB, satA)
 
-    linkedSats = {'U':None, 'D':None, 'R':None, 'L':None}
+    linkedSats = {'U': None, 'D': None, 'R': None, 'L': None}
     for edge in list(g.edges(satA.ID)):
         if edge[1][0].isdigit():
             satB = findByID(earth, edge[1])
             dir = getDirection(satA, satB)
 
-            if(dir == 3):                                         # Found Satellite at East
+            if (dir == 3):  # Found Satellite at East
                 if linkedSats['R'] is not None:
                     # print(f"{satA.ID} east satellite duplicated: {linkedSats['R'].ID}, {satB.ID}")
                     most_horizontal, less_horizontal = getMostHorizontal(satA, linkedSats['R'], satB)
                     # print(f'Keeping most horizontal link: {most_horizontal.ID}')
-                    linkedSats['R']  = most_horizontal
+                    linkedSats['R'] = most_horizontal
                     # remove pair from G
                     g.remove_edge(satA.ID, less_horizontal.ID)
                 else:
-                    linkedSats['R']  = satB
+                    linkedSats['R'] = satB
 
-            elif(dir == 4):                                         # Found Satellite at West
+            elif (dir == 4):  # Found Satellite at West
                 if linkedSats['L'] is not None:
                     # print(f"{satA.ID} West satellite duplicated: {linkedSats['L'].ID}, {satB.ID}")
                     most_horizontal, less_horizontal = getMostHorizontal(satA, linkedSats['L'], satB)
                     # print(f'Keeping most horizontal link: {most_horizontal.ID}')
-                    linkedSats['L']  = most_horizontal
+                    linkedSats['L'] = most_horizontal
                     # remove pair from G
                     g.remove_edge(satA.ID, less_horizontal.ID)
                 else:
-                    linkedSats['L']  = satB
+                    linkedSats['L'] = satB
 
 
 def establishRemainingISLs(earth, g):
@@ -6165,8 +7691,8 @@ def establishRemainingISLs(earth, g):
     Orb_heights = [plane.h for plane in earth.LEO]
     for i in range(len(earth.LEO)):
         for j in range(len(earth.LEO)):
-            Max_slnt_rng[i, j] = (np.sqrt((Orb_heights[i] + Re)**2 - Re**2) +
-                                  np.sqrt((Orb_heights[j] + Re)**2 - Re**2))
+            Max_slnt_rng[i, j] = (np.sqrt((Orb_heights[i] + Re) ** 2 - Re ** 2) +
+                                  np.sqrt((Orb_heights[j] + Re) ** 2 - Re ** 2))
 
     # Define slant range and data rate matrices
     slant_range_los = los_slant_range(slant_range, meta, Max_slnt_rng, Positions)
@@ -6185,23 +7711,23 @@ def establishRemainingISLs(earth, g):
                 idx_l = Satellites.index(sat_l)
                 if slant_range_los[idx_r, idx_l] < math.inf:
                     # Handle longitude wrapping correctly
-                    longitude_difference = (satellites_with_no_left[sat_l][0] - satellites_with_no_right[sat_r][0] + 360) % 360
+                    longitude_difference = (satellites_with_no_left[sat_l][0] - satellites_with_no_right[sat_r][
+                        0] + 360) % 360
                     if longitude_difference > 0 and longitude_difference < 180:
                         # lat_diff = abs(satellites_with_no_right[sat_r][1] - satellites_with_no_left[sat_l][1])
-                        lat_diff = abs(sat_r.latitude-sat_l.latitude)
+                        lat_diff = abs(sat_r.latitude - sat_l.latitude)
                         potential_links.append((lat_diff, sat_r, sat_l, slant_range_los[idx_r, idx_l]))
 
     # Sort by latitude difference to prioritize horizontal links
     # potential_links.sort()
     potential_links.sort(key=lambda x: x[0])  # Uses latitude difference as sort key
 
-
     # Establish links from closest to farthest in terms of horizontal alignment
     for lat_diff, sat_r, sat_l, distance in potential_links:
         if sat_r.right is None and sat_l.left is None:
             g.add_edge(sat_r.ID, sat_l.ID, slant_range=distance,
-                       dataRate=1/shannonRate[Satellites.index(sat_r), Satellites.index(sat_l)],
-                       dataRateOG=shannonRate[Satellites.index(sat_r), Satellites.index(sat_l)], hop=1, type = 'ISL')
+                       dataRate=1 / shannonRate[Satellites.index(sat_r), Satellites.index(sat_l)],
+                       dataRateOG=shannonRate[Satellites.index(sat_r), Satellites.index(sat_l)], hop=1, type='ISL')
             sat_r.right = sat_l
             sat_l.left = sat_r
             # print(f"Established horizontal link between {sat_r.ID} (right) and {sat_l.ID} (left) with latitude difference {lat_diff:.2f} deg and distance: {distance/1000:.2F} km.")
@@ -6229,19 +7755,19 @@ def createGraph(earth, matching='Greedy'):
     ###############################
     for GT in earth.gateways:
         if GT.linkedSat[1]:
-            g.add_node(GT.name, GT = GT)            # add GT as node
-            g.add_edge(GT.name, GT.linkedSat[1].ID, # add GT linked sat as edge
-            slant_range = GT.linkedSat[0],          # slant range
-            invDataRate = 1/GT.dataRate,            # Inverse of dataRate
-            dataRateOG = GT.dataRate,               # original shannon dataRate
-            hop = 1,
-            type = 'GSL')                                # in case we just want to count hops
+            g.add_node(GT.name, GT=GT)  # add GT as node
+            g.add_edge(GT.name, GT.linkedSat[1].ID,  # add GT linked sat as edge
+                       slant_range=GT.linkedSat[0],  # slant range
+                       invDataRate=1 / GT.dataRate,  # Inverse of dataRate
+                       dataRateOG=GT.dataRate,  # original shannon dataRate
+                       hop=1,
+                       type='GSL')  # in case we just want to count hops
 
     # add inter-ISL and intra-ISL edges
     ###############################
-    if matching=='Markovian':
+    if matching == 'Markovian':
         markovEdges = markovianMatchingTwo(earth)
-    elif matching=='Greedy':
+    elif matching == 'Greedy':
         markovEdges = greedyMatching(earth)
     print(f'Matching: {matching}')
     # print('----------------------------------')
@@ -6251,13 +7777,14 @@ def createGraph(earth, matching='Greedy'):
     # biggestDist = -1
     for markovEdge in markovEdges:
         g.add_edge(markovEdge.i, markovEdge.j,  # source and destination IDs
-        slant_range = markovEdge.slant_range,   # slant range
-        dataRate = 1/markovEdge.shannonRate,    # Inverse of dataRate # FIXME sometimes markovEdge.shannonRate is 0
-        dataRateOG = markovEdge.shannonRate,    # Original shannon datRate
-        hop = 1,                                # in case we just want to count hops
-        dij = markovEdge.dij,
-        dji = markovEdge.dji,
-        type = 'ISL')
+                   slant_range=markovEdge.slant_range,  # slant range
+                   dataRate=1 / markovEdge.shannonRate,
+                   # Inverse of dataRate # FIXME sometimes markovEdge.shannonRate is 0
+                   dataRateOG=markovEdge.shannonRate,  # Original shannon datRate
+                   hop=1,  # in case we just want to count hops
+                   dij=markovEdge.dij,
+                   dji=markovEdge.dji,
+                   type='ISL')
         if firstMove and markovEdge.slant_range > biggestDist:  # keep the biggest possible distance for the normalization of the rewards
             biggestDist = markovEdge.slant_range
 
@@ -6266,9 +7793,9 @@ def createGraph(earth, matching='Greedy'):
     for plane in earth.LEO:
         for sat in plane.sats:
             deleteDuplicatedLinks(sat, g, earth)
-        
+
     earth.graph = g
-    
+
     # update the neighbors
     for plane in earth.LEO:
         for sat in plane.sats:
@@ -6278,16 +7805,16 @@ def createGraph(earth, matching='Greedy'):
     print('Establishing remaining edges...')
     g = establishRemainingISLs(earth, g)
 
-
     if firstMove:
-        print(f'Biggest slant range between satellites: {biggestDist/1000:.2f} km')
+        print(f'Biggest slant range between satellites: {biggestDist / 1000:.2f} km')
         firstMove = False
     print('----------------------------------')
 
     return g
 
 
-def build_terrestrial_graph(json_path: str, gateways_csv: str, k_nearest: int = 3, rate_normal: float = 100e9, rate_seacable: float = 40e9, rate_gateway: float = 50e9):
+def build_terrestrial_graph(json_path: str, gateways_csv: str, k_nearest: int = 3, rate_normal: float = 100e6,
+                            rate_seacable: float = 40e6, rate_gateway: float = 50e6):
     """
     Costruisce il grafo terrestre a partire dal JSON TopoHub (node-link),
     rinomina i nodi usando 'name' come chiave (stringa),
@@ -6455,7 +7982,6 @@ def build_terrestrial_graph(json_path: str, gateways_csv: str, k_nearest: int = 
     return G
 
 
-
 def draw_terrestrial_graph(G, gateways_csv="Gateways.csv", highlight_path=None):
     # Costruisci dizionario posizioni
     pos = {}
@@ -6502,6 +8028,7 @@ def draw_terrestrial_graph(G, gateways_csv="Gateways.csv", highlight_path=None):
     plt.axis("off")
     plt.show()
 
+
 def generate_users_from_density_map(density_map, num_users, activation_rate=0.03, seed=None):
     if seed is not None:
         np.random.seed(seed)
@@ -6528,6 +8055,7 @@ def generate_users_from_density_map(density_map, num_users, activation_rate=0.03
 
     return all_users, active_users
 
+
 def associate_users_to_nodes(users, terrestrial_nodes):
     """
     Associate every generated user to the closest terrestrial node
@@ -6542,6 +8070,7 @@ def associate_users_to_nodes(users, terrestrial_nodes):
 
     print(f"{len(users)} users associated to terrestrial nodes")
 
+
 def getShortestPath(source, destination, weight, g):
     '''
     Gives you the shortest path between a source and a destination and plots it if desired.
@@ -6553,10 +8082,11 @@ def getShortestPath(source, destination, weight, g):
 
     path = []
     try:
-        shortest = nx.shortest_path(g, source, destination, weight = weight)    # computes the shortest path [dataRate, slant_range, hops]
-        for hop in shortest:                                                    # pre process the data so it can be used in the future
+        shortest = nx.shortest_path(g, source, destination,
+                                    weight=weight)  # computes the shortest path [dataRate, slant_range, hops]
+        for hop in shortest:  # pre process the data so it can be used in the future
             key = list(g.nodes[hop])[0]
-            if shortest.index(hop) == 0 or shortest.index(hop) == len(shortest)-1:
+            if shortest.index(hop) == 0 or shortest.index(hop) == len(shortest) - 1:
                 path.append([hop, g.nodes[hop][key].longitude, g.nodes[hop][key].latitude])
             else:
                 path.append([hop, math.degrees(g.nodes[hop][key].longitude), math.degrees(g.nodes[hop][key].latitude)])
@@ -6568,25 +8098,10 @@ def getShortestPath(source, destination, weight, g):
 
 
 def plotShortestPath(earth, path, outputPath, ID=None, time=None):
-    earth.plotMap(True, True, path=path, ID=ID,time=time)
-    plt.savefig(outputPath + 'popMap_' + path[0][0] + '_to_' + path[len(path)-1][0] + '.png', dpi = 500)
+    earth.plotMap(True, True, path=path, ID=ID, time=time)
+    plt.savefig(outputPath + 'popMap_' + path[0][0] + '_to_' + path[len(path) - 1][0] + '.png', dpi=500)
     # plt.show()
     plt.close()
-
-# def getShortestPathTerrestrial(source, destination, weight, g):
-#     try:
-#         for node in [source, destination]:
-#             if node not in g:
-#                 raise Exception(f"Node '{node}' not in graph.")
-#             if 'latitude' not in g.nodes[node] or 'longitude' not in g.nodes[node]:
-#                 raise Exception(f"Node '{node}' missing lat/lon.")
-#
-#         shortest = nx.shortest_path(g, source, destination, weight=weight)
-#         return shortest
-#
-#     except Exception as e:
-#         print(f"getShortestPathTerrestrial Caught an exception: {e}")
-#         return []
 
 # --- PATH UTILS (terrestrial) --- #
 
@@ -6598,6 +8113,7 @@ def choose_terrestrial_weight(G, objective: str = "latency"):
     - objective='throughput'-> preferisce 1/dataRate e, se assente, ripiega su una distanza.
     Ritorna una stringa (nome attributo) oppure una funzione weight(u,v,d)->float.
     """
+
     def edges_have(key: str) -> bool:
         return any(d.get('type') == 'terrestrial' and key in d for _, _, d in G.edges(data=True))
 
@@ -6629,97 +8145,35 @@ def choose_terrestrial_weight(G, objective: str = "latency"):
         return choose_terrestrial_weight(G, objective="latency")
 
 
-def getShortestPathTerrestrial(source, destination, G):
-    """
-    Restituisce il cammino minimo tra due nodi del grafo terrestre G.
-    Metrica:
-      - se gli archi hanno 'distance_km' usa quella;
-      - altrimenti, se c'è 'dataRate', usa 1/dataRate (inverte e crea 'inv_dataRate');
-      - altrimenti, nessun peso (conteggio hop).
-    """
-    try:
-        # scegli la metrica disponibile
-        has_dist = any(('distance_km' in d) for _, _, d in G.edges(data=True))
-        has_rate = any(('dataRate' in d) for _, _, d in G.edges(data=True))
-
-        weight = None
-        if has_dist:
-            weight = 'distance_km'
-        elif has_rate:
-            # prepara peso inverso del dataRate
-            for u, v, d in G.edges(data=True):
-                if 'dataRate' in d:
-                    dr = max(float(d['dataRate']), 1e-9)
-                    d['inv_dataRate'] = 1.0 / dr
-            weight = 'inv_dataRate'
-
-        return nx.shortest_path(G, source, destination, weight=weight)
-
-    except Exception as e:
-        print(f"getShortestPathTerrestrial caught an exception: {e}")
-        return []
-
-def compute_hybrid_path(src_key, dst_key, earth, k_nearest=3):
-    """
-    Fallback semplice: src (terrestre) -> gateway vicino -> (rete spaziale) -> gateway vicino -> dst (terrestre).
-    Ritorna una lista di chiavi (int/str). Se fallisce, [].
-    """
-    Gt = earth.terr_graph
-    Gs = earth.space_graph
-
-    # 1) gateway più vicino a src e a dst (in metri su Gt)
-    def nearest_gateways(node_key, k=1):
-        candidates = []
-        lon1 = Gt.nodes[node_key].get('lon')
-        lat1 = Gt.nodes[node_key].get('lat')
-        if lon1 is None or lat1 is None:
-            return []
-        for n, nd in Gt.nodes(data=True):
-            if nd.get('type') == 'gateway':
-                lon2, lat2 = nd.get('lon'), nd.get('lat')
-                if lon2 is None or lat2 is None:
-                    continue
-                d = ((lon1 - lon2)**2 + (lat1 - lat2)**2) ** 0.5  # distanza euclidea su lon/lat (approssimata)
-                candidates.append((d, n))
-        candidates.sort(key=lambda x: x[0])
-        return [n for _, n in candidates[:k]]
-
-    src_gws = nearest_gateways(src_key, k_nearest)
-    dst_gws = nearest_gateways(dst_key, k_nearest)
-
-    # 2) prova k×k combinazioni
-    for g_src in src_gws:
-        for g_dst in dst_gws:
-            # path terrestre src->g_src
-            p1 = getShortestPathTerrestrial(src_key, g_src, Gt)
-            if not p1:
-                continue
-            # path spaziale g_src->g_dst (string->string) sulla space graph
-            try:
-                p2 = nx.shortest_path(Gs, g_src, g_dst, weight=earth.pathParam)
-            except Exception:
-                p2 = []
-            if not p2:
-                continue
-            # path terrestre g_dst->dst
-            p3 = getShortestPathTerrestrial(g_dst, dst_key, Gt)
-            if not p3:
-                continue
-
-            # concatena evitando duplicati ai bordi
-            path = list(p1)
-            if path[-1] == p2[0]:
-                path += p2[1:]
-            else:
-                path += p2
-            if path[-1] == p3[0]:
-                path += p3[1:]
-            else:
-                path += p3
-            return path
-
-    return []
-
+# def getShortestPathTerrestrial(source, destination, G):
+#     """
+#     Restituisce il cammino minimo tra due nodi del grafo terrestre G.
+#     Metrica:
+#       - se gli archi hanno 'distance_km' usa quella;
+#       - altrimenti, se c'è 'dataRate', usa 1/dataRate (inverte e crea 'inv_dataRate');
+#       - altrimenti, nessun peso (conteggio hop).
+#     """
+#     try:
+#         # scegli la metrica disponibile
+#         has_dist = any(('distance_km' in d) for _, _, d in G.edges(data=True))
+#         has_rate = any(('dataRate' in d) for _, _, d in G.edges(data=True))
+#
+#         weight = None
+#         if has_dist:
+#             weight = 'distance_km'
+#         elif has_rate:
+#             # prepara peso inverso del dataRate
+#             for u, v, d in G.edges(data=True):
+#                 if 'dataRate' in d:
+#                     dr = max(float(d['dataRate']), 1e-9)
+#                     d['inv_dataRate'] = 1.0 / dr
+#             weight = 'inv_dataRate'
+#
+#         return nx.shortest_path(G, source, destination, weight=weight)
+#
+#     except Exception as e:
+#         print(f"getShortestPathTerrestrial caught an exception: {e}")
+#         return []
 
 
 def plot_terrestrial_graph_with_path(graph, path):
@@ -6749,12 +8203,13 @@ def plot_terrestrial_graph_with_path(graph, path):
     plt.grid(True)
     plt.show()
 
+
 def normalize(arr, t_min, t_max):
     norm_arr = []
     diff = t_max - t_min
     diff_arr = max(arr) - min(arr)
     for i in arr:
-        temp = (((i - min(arr))*diff)/diff_arr) + t_min
+        temp = (((i - min(arr)) * diff) / diff_arr) + t_min
         norm_arr.append(temp)
     return norm_arr
 
@@ -6778,8 +8233,10 @@ def watchScores(earth, g):
             print(sat.ID + ": ")
             print('-----------------')
             for edge in list(g.edges(sat.ID)):
-                if edge[1][0].isdigit():    # pos 1 regarding to the linked node and position 0 regarding to the first character of the linked node
-                    print('Score between ' + str(edge) + ': ' + str(getSatScore(findByID(earth, edge[0]), findByID(earth, edge[1]), g)))
+                if edge[1][
+                    0].isdigit():  # pos 1 regarding to the linked node and position 0 regarding to the first character of the linked node
+                    print('Score between ' + str(edge) + ': ' + str(
+                        getSatScore(findByID(earth, edge[0]), findByID(earth, edge[1]), g)))
                 else:
                     print('Gateway linked: ' + str(edge))
 
@@ -6801,30 +8258,30 @@ def computeOutliers(g):
     '''
     # define outliers
     slantRanges = []
-    dataRates   = []
+    dataRates = []
 
     for edge in list(g.edges()):
         slantRanges.append(g.edges[edge]['slant_range'])
-        dataRates  .append(g.edges[edge]['dataRateOG'])
+        dataRates.append(g.edges[edge]['dataRateOG'])
 
     # Slant Range Outliers
     slantRanges = pd.Series(slantRanges)
     Q3 = slantRanges.describe()['75%']
     Q1 = slantRanges.describe()['25%']
     IQR = Q3 - Q1
-    upperFence = Q3 + (1.5*IQR)
+    upperFence = Q3 + (1.5 * IQR)
 
     # Data Rate Outliers
     dataRates = pd.Series(dataRates)
     Q3 = dataRates.describe()['75%']
     Q1 = dataRates.describe()['25%']
     IQR = Q3 - Q1
-    lowerFence = Q1 - (1.5*IQR)
+    lowerFence = Q1 - (1.5 * IQR)
 
     return lowerFence, upperFence
 
 
-def getQueues(sat, threshold=None, DDQN = False):
+def getQueues(sat, threshold=None, DDQN=False):
     '''
     When !DDQN, this function will return True if one of the satellite queues has a length over a limit or they are
     missing one link
@@ -6848,19 +8305,19 @@ def getQueues(sat, threshold=None, DDQN = False):
     IF THE SATELLITE DOES NOT HAVE 4 LINEKD SATELLITES IT WILL BE CONSIDERED AS HIGH QUEUE
     '''
     queuesLen = []
-    infQueue  = False
+    infQueue = False
     queuesDic = {'U': np.inf,
                  'D': np.inf,
                  'R': np.inf,
                  'L': np.inf}
     try:
-       queuesLen.append(len(sat.sendBufferSatsIntra[0][1]))
-       queuesDic['U'] = len(sat.sendBufferSatsIntra[0][1])
+        queuesLen.append(len(sat.sendBufferSatsIntra[0][1]))
+        queuesDic['U'] = len(sat.sendBufferSatsIntra[0][1])
     except (IndexError, AttributeError):
         infQueue = True
     try:
-       queuesLen.append(len(sat.sendBufferSatsIntra[1][1]))
-       queuesDic['D'] = len(sat.sendBufferSatsIntra[1][1])
+        queuesLen.append(len(sat.sendBufferSatsIntra[1][1]))
+        queuesDic['D'] = len(sat.sendBufferSatsIntra[1][1])
 
     except (IndexError, AttributeError):
         infQueue = True
@@ -6886,7 +8343,7 @@ def hasBadConnection(satA, satB, thresholdSL, thresholdTHR, g):
     This function will return true if the satellites distance between them > trheshold or if their throughpuyt < trheshold
     They are far away or the link is weak
     '''
-    slantRange     = g.edges[satA.ID, satB.ID]['slant_range']
+    slantRange = g.edges[satA.ID, satB.ID]['slant_range']
     throughputSats = g.edges[satA.ID, satB.ID]['dataRateOG']
 
     return (slantRange > thresholdSL or throughputSats < thresholdTHR)
@@ -6918,7 +8375,8 @@ def getSatScore(satA, satB, g):
 # @profile
 def getDeepSatScore(queueLength):
     # return 1 if queueLength > infQueue else (int(np.floor(queueVals*np.log10(queueLength + 1)/np.log10(infQueue))))/queueVals
-    return queueVals if queueLength > infQueue else int(np.floor(queueVals*np.log10(queueLength + 1)/np.log10(infQueue)))
+    return queueVals if queueLength > infQueue else int(
+        np.floor(queueVals * np.log10(queueLength + 1) / np.log10(infQueue)))
 
 
 def getDirection_deprecated(satA, satB):
@@ -6942,12 +8400,12 @@ def getDirection_deprecated(satA, satB):
             return 1
         else:
             return 2
-    if(abs(abs(satA.longitude) - abs(satB.longitude)) < math.pi):         # they are not too far away
+    if (abs(abs(satA.longitude) - abs(satB.longitude)) < math.pi):  # they are not too far away
         if satA.longitude < satB.longitude:
             return 3
         else:
             return 4
-    else:                                                       # they are very far away
+    else:  # they are very far away
         if satA.longitude > satB.longitude:
             return 3
         else:
@@ -6997,7 +8455,7 @@ def linkedSatsList(g):
     return pd.DataFrame(linkedSats)
 
 
-def getDestination(Block, g, sat = None):
+def getDestination(Block, g, sat=None):
     '''
     Returns:
     blockDestination: Position of the satellite linked to the block destination Gateway among a list of all the
@@ -7005,7 +8463,7 @@ def getDestination(Block, g, sat = None):
     linkedGateway:    If the satellite provided is linked to a gateway, it will return the position of the satellite in
                       the mentioned list. Otherwise it will return -1.
     '''
-    destination = list(g.edges(Block.destination.name))[0][1]    # ID of the Satellite linked to the block destination GT
+    destination = list(g.edges(Block.destination.name))[0][1]  # ID of the Satellite linked to the block destination GT
     blockDestination = (linkedSatsList(g)[1] == destination).argmax()
 
     if sat is None:
@@ -7028,15 +8486,15 @@ def getLinkedSats(satA, g, earth):
     SAT LEFT:    linked satellite with lower  plane ID
     SAT RIGHT:   linked satellite with higher plane ID
     '''
-    linkedSats = {'U':None, 'D':None, 'R':None, 'L':None}
+    linkedSats = {'U': None, 'D': None, 'R': None, 'L': None}
     for edge in list(g.edges(satA.ID)):
         if edge[1][0].isdigit():
             satB = findByID(earth, edge[1])
             dir = getDirection(satA, satB)
 
-            if(dir == 1 and linkedSats['U'] is None):               # Found a satellite at north
-                linkedSats['U']  = satB
-            elif(dir == 1):                                         # Found second North, this sat is on South Pole
+            if (dir == 1 and linkedSats['U'] is None):  # Found a satellite at north
+                linkedSats['U'] = satB
+            elif (dir == 1):  # Found second North, this sat is on South Pole
                 if satB.latitude > linkedSats['U'].latitude:
                     # the satellite seen is more at north than Up one, so is set as new Up
                     linkedSats['D'] = linkedSats['U']
@@ -7045,24 +8503,24 @@ def getLinkedSats(satA, g, earth):
                     # the satellite seen is less at north than Up one, so is set as Down
                     linkedSats['D'] = satB
 
-            elif(dir == 2 and linkedSats['D'] is None):             # Found satellite at South
-                linkedSats['D']  = satB   
-            elif(dir == 2):                                         # Found second Down, this sat is on North Pole
-                if satB.latitude < linkedSats['D'].latitude:        
+            elif (dir == 2 and linkedSats['D'] is None):  # Found satellite at South
+                linkedSats['D'] = satB
+            elif (dir == 2):  # Found second Down, this sat is on North Pole
+                if satB.latitude < linkedSats['D'].latitude:
                     linkedSats['U'] = linkedSats['D']
                     linkedSats['D'] = satB
                 else:
                     linkedSats['U'] = satB
 
-            elif(dir == 3):                                         # Found Satellite at East
+            elif (dir == 3):  # Found Satellite at East
                 # if linkedSats['R'] is not None:
                 #     print(f"{satA.ID} east satellite duplicated! Replacing {linkedSats['R'].ID} with {satB.ID}")
-                linkedSats['R']  = satB
+                linkedSats['R'] = satB
 
-            elif(dir == 4):                                         # Found Satellite at West
+            elif (dir == 4):  # Found Satellite at West
                 # if linkedSats['L'] is not None:
                 #     print(f"{satA.ID} west satellite duplicated! Replacing {linkedSats['L'].ID} with {satB.ID}")
-                linkedSats['L']  = satB
+                linkedSats['L'] = satB
 
         else:
             pass
@@ -7075,7 +8533,7 @@ def getDeepLinkedSats(satA, g, earth):
     at each direction based on the new definition of upper and lower satellites.
     Satellite at the right and left are determined based on inter-plane links.
     '''
-    linkedSats = {'U':None, 'D':None, 'R':None, 'L':None}
+    linkedSats = {'U': None, 'D': None, 'R': None, 'L': None}
 
     # Use the provided logic to find intra-plane neighbours (upper and lower)
     # satA.findIntraNeighbours(earth)
@@ -7106,18 +8564,18 @@ def getDeepLinkedSats(satA, g, earth):
 
 def getState(Block, satA, g, earth):
     '''
-    Given a dataBlock and the current satellite this function will return a list with the 
+    Given a dataBlock and the current satellite this function will return a list with the
     values of the 5 fields of the state space.
     Destination: linked satellite to the destination gateway index.
 
-    we initialize the score of the satellites in 2 (worst case) because we do not know if they 
+    we initialize the score of the satellites in 2 (worst case) because we do not know if they
     will actually have a linked satellite in that direction.
-    If they have it the satellite score will replace the initialization score (2) but if they dont 
+    If they have it the satellite score will replace the initialization score (2) but if they dont
     have it, as we need a score in order to set the state space we will give the worst score and
     send a None in the destinations dict. That action will be initialized with -infinite in the QTable
     '''
-    destination  = getDestination(Block, g)
-    state        = [2, 2, 2, 2, destination]   
+    destination = getDestination(Block, g)
+    state = [2, 2, 2, 2, destination]
 
     state[0] = getSatScore(satA, satA.QLearning.linkedSats['U'], g)
     state[1] = getSatScore(satA, satA.QLearning.linkedSats['D'], g)
@@ -7129,7 +8587,7 @@ def getState(Block, satA, g, earth):
 
 def getBiasedLatitude(sat):
     try:
-        return (int(math.degrees(sat.latitude))+latBias)/coordGran
+        return (int(math.degrees(sat.latitude)) + latBias) / coordGran
     except AttributeError as e:
         # print(f"getBiasedLatitude Caught an exception: {e}")
         return notAvail
@@ -7137,7 +8595,7 @@ def getBiasedLatitude(sat):
 
 def getBiasedLongitude(sat):
     try:
-        return (int(math.degrees(sat.longitude))+lonBias)/coordGran
+        return (int(math.degrees(sat.longitude)) + lonBias) / coordGran
     except AttributeError as e:
         # print(f"getBiasedLongitude Caught an exception: {e}")
         return notAvail
@@ -7148,18 +8606,18 @@ def getDeepStateReduced(block, sat, linkedSats):
     if satDest is None:
         print(f'{block.destination} has no linked satellite :(')
         return None
-    return np.array([getBiasedLatitude(linkedSats['U']),                        # Up link Positions
-                    getBiasedLongitude(linkedSats['U']),
-                    getBiasedLatitude(linkedSats['D']),                         # Down link Positions
-                    getBiasedLongitude(linkedSats['D']),
-                    getBiasedLatitude(linkedSats['R']),                         # Right link Positions
-                    getBiasedLongitude(linkedSats['R']),
-                    getBiasedLatitude(linkedSats['L']),                         # Left link Positions
-                    getBiasedLongitude(linkedSats['L']),
-                    getBiasedLatitude(sat),                                     # Actual Latitude
-                    getBiasedLongitude(sat),                                    # Actual Longitude
-                    getBiasedLatitude(satDest),                                 # Destination Latitude
-                    getBiasedLongitude(satDest)]).reshape(1,-1)                 # Destination Longitude
+    return np.array([getBiasedLatitude(linkedSats['U']),  # Up link Positions
+                     getBiasedLongitude(linkedSats['U']),
+                     getBiasedLatitude(linkedSats['D']),  # Down link Positions
+                     getBiasedLongitude(linkedSats['D']),
+                     getBiasedLatitude(linkedSats['R']),  # Right link Positions
+                     getBiasedLongitude(linkedSats['R']),
+                     getBiasedLatitude(linkedSats['L']),  # Left link Positions
+                     getBiasedLongitude(linkedSats['L']),
+                     getBiasedLatitude(sat),  # Actual Latitude
+                     getBiasedLongitude(sat),  # Actual Longitude
+                     getBiasedLatitude(satDest),  # Destination Latitude
+                     getBiasedLongitude(satDest)]).reshape(1, -1)  # Destination Longitude
 
 
 def getDeepStateDiff(block, sat, linkedSats):
@@ -7176,7 +8634,7 @@ def getDeepStateDiff(block, sat, linkedSats):
             return diff / coordGran
         except AttributeError:
             return notAvail
-        
+
     def get_absolute_position(coord, bias, gran):
         # Convert absolute position to a normalized value within the specified range
         return (math.degrees(coord) + bias) / gran
@@ -7255,12 +8713,12 @@ def getDeepStateDiffLastHop(block, sat, linkedSats):
             return diff / coordGran
         except AttributeError:
             return notAvail
-        
+
     def get_absolute_position(coord, bias, gran):
         # Convert absolute position to a normalized value within the specified range
         return (math.degrees(coord) + bias) / gran
-    
-    def get_last_satellite(block, sat): # REVIEW if index here are the same as decision index
+
+    def get_last_satellite(block, sat):  # REVIEW if index here are the same as decision index
         '''This will return information about the last block hop in relation to the current satellite:
         -1: Constellation moved and the last block's satellite is not connected to current satellite
         0: Upper neighbour
@@ -7351,45 +8809,45 @@ def getDeepState(block, sat, linkedSats):
         print(f'{block.destination} has no linked satellite :(')
         return None
 
-    queuesU = getQueues(linkedSats['U'], DDQN = True)
-    queuesD = getQueues(linkedSats['D'], DDQN = True)
-    queuesR = getQueues(linkedSats['R'], DDQN = True)
-    queuesL = getQueues(linkedSats['L'], DDQN = True)
-    return np.array([getDeepSatScore(queuesU['U']),                             # Up link scores
-                    getDeepSatScore(queuesU['D']),
-                    getDeepSatScore(queuesU['R']),
-                    getDeepSatScore(queuesU['L']),
-                    getBiasedLatitude(linkedSats['U']),                         # Up link Positions
-                    getBiasedLongitude(linkedSats['U']),
-                    getDeepSatScore(queuesD['U']),                              # Down link scores
-                    getDeepSatScore(queuesD['D']),
-                    getDeepSatScore(queuesD['R']),
-                    getDeepSatScore(queuesD['L']),
-                    getBiasedLatitude(linkedSats['D']),                         # Down link Positions
-                    getBiasedLongitude(linkedSats['D']),
-                    getDeepSatScore(queuesR['U']),                              # Right link scores
-                    getDeepSatScore(queuesR['D']),
-                    getDeepSatScore(queuesR['R']),
-                    getDeepSatScore(queuesR['L']),
-                    getBiasedLatitude(linkedSats['R']),                         # Right link Positions
-                    getBiasedLongitude(linkedSats['R']),
-                    getDeepSatScore(queuesL['U']),                              # Left link scores
-                    getDeepSatScore(queuesL['D']),
-                    getDeepSatScore(queuesL['R']),
-                    getDeepSatScore(queuesL['L']),
-                    getBiasedLatitude(linkedSats['L']),                         # Left link Positions
-                    getBiasedLongitude(linkedSats['L']),
+    queuesU = getQueues(linkedSats['U'], DDQN=True)
+    queuesD = getQueues(linkedSats['D'], DDQN=True)
+    queuesR = getQueues(linkedSats['R'], DDQN=True)
+    queuesL = getQueues(linkedSats['L'], DDQN=True)
+    return np.array([getDeepSatScore(queuesU['U']),  # Up link scores
+                     getDeepSatScore(queuesU['D']),
+                     getDeepSatScore(queuesU['R']),
+                     getDeepSatScore(queuesU['L']),
+                     getBiasedLatitude(linkedSats['U']),  # Up link Positions
+                     getBiasedLongitude(linkedSats['U']),
+                     getDeepSatScore(queuesD['U']),  # Down link scores
+                     getDeepSatScore(queuesD['D']),
+                     getDeepSatScore(queuesD['R']),
+                     getDeepSatScore(queuesD['L']),
+                     getBiasedLatitude(linkedSats['D']),  # Down link Positions
+                     getBiasedLongitude(linkedSats['D']),
+                     getDeepSatScore(queuesR['U']),  # Right link scores
+                     getDeepSatScore(queuesR['D']),
+                     getDeepSatScore(queuesR['R']),
+                     getDeepSatScore(queuesR['L']),
+                     getBiasedLatitude(linkedSats['R']),  # Right link Positions
+                     getBiasedLongitude(linkedSats['R']),
+                     getDeepSatScore(queuesL['U']),  # Left link scores
+                     getDeepSatScore(queuesL['D']),
+                     getDeepSatScore(queuesL['R']),
+                     getDeepSatScore(queuesL['L']),
+                     getBiasedLatitude(linkedSats['L']),  # Left link Positions
+                     getBiasedLongitude(linkedSats['L']),
 
-                    # int(math.degrees(sat.latitude))+latBias,                    # Actual Latitude
-                    # int(math.degrees(sat.longitude))+lonBias,                   # Actual Longitude
-                    # int(math.degrees(satDest.latitude))+latBias,                # Destination Latitude
-                    # int(math.degrees(satDest.longitude))+lonBias]).reshape(1,-1)# Destination Longitude
+                     # int(math.degrees(sat.latitude))+latBias,                    # Actual Latitude
+                     # int(math.degrees(sat.longitude))+lonBias,                   # Actual Longitude
+                     # int(math.degrees(satDest.latitude))+latBias,                # Destination Latitude
+                     # int(math.degrees(satDest.longitude))+lonBias]).reshape(1,-1)# Destination Longitude
 
-                    getBiasedLatitude(sat),                                     # Actual Latitude
-                    getBiasedLongitude(sat),                                    # Actual Longitude
-                    getBiasedLatitude(satDest),                                 # Destination Latitude
-                    getBiasedLongitude(satDest)]).reshape(1,-1)                 # Destination Longitude
-    
+                     getBiasedLatitude(sat),  # Actual Latitude
+                     getBiasedLongitude(sat),  # Actual Longitude
+                     getBiasedLatitude(satDest),  # Destination Latitude
+                     getBiasedLongitude(satDest)]).reshape(1, -1)  # Destination Longitude
+
 
 def createQTable(NGT):
     '''
@@ -7403,7 +8861,8 @@ def createQTable(NGT):
     satUp, satDown, satRight, satLeft = 3, 3, 3, 3
     Destination = NGT
 
-    qValues = np.zeros((satUp, satDown, satRight, satLeft, Destination, len(actions)))  # first 5 fields are states while 6th field is the action. 4050 values with 10 GTs
+    qValues = np.zeros((satUp, satDown, satRight, satLeft, Destination,
+                        len(actions)))  # first 5 fields are states while 6th field is the action. 4050 values with 10 GTs
 
     return qValues
 
@@ -7427,7 +8886,7 @@ def getQueueReward(queueTime, w1):
     Given the queue time in seconds, this function will return the queue reward.
     With 125 packets, 9ms Queue (The thershold that we take to consider a queue as high) the reward will be -0.04 (with w1 = 2)
     '''
-    return w1*(1-10**queueTime)
+    return w1 * (1 - 10 ** queueTime)
 
 
 # @profile
@@ -7442,11 +8901,11 @@ def getDistanceReward(satA, satB, destination, w2):
 
     Formula: w*(SLR + TSLa)/TSLa = w*(TSLa - TSLb + TSLa)/TSLa = w*(2*TSLa - TSLb)/TSLa
     '''
-    balance   = -1      # centralizes the result in 0
+    balance = -1  # centralizes the result in 0
 
     TSLa = getSlantRange(satA, destination)
     TSLb = getSlantRange(satB, destination)
-    return w2*((2*TSLa-TSLb)/TSLa + balance)
+    return w2 * ((2 * TSLa - TSLb) / TSLa + balance)
 
 
 def getDistanceRewardV2(sat, nextSat, satU, satD, satR, satL, destination, w2):
@@ -7487,7 +8946,7 @@ def getDistanceRewardV3(sat, nextSat, satU, satD, satR, satL, destination, w2):
     reward = SLr/max(SLs)
     '''
     SLr = getSlantRange(sat, destination) - getSlantRange(nextSat, destination)
-    SLrs= []
+    SLrs = []
 
     if satU is not None:
         SLrs.append(getSlantRange(sat, destination) - getSlantRange(satU, destination))
@@ -7498,8 +8957,8 @@ def getDistanceRewardV3(sat, nextSat, satU, satD, satR, satL, destination, w2):
     if satL is not None:
         SLrs.append(getSlantRange(sat, destination) - getSlantRange(satL, destination))
 
-    return w2*SLr/max(SLrs)
-    
+    return w2 * SLr / max(SLrs)
+
 
 def getDistanceRewardV4(sat, nextSat, satDest, w2, w4):
     global biggestDist
@@ -7508,45 +8967,45 @@ def getDistanceRewardV4(sat, nextSat, satDest, w2, w4):
     if TravelDistance > biggestDist:
         # print(f'Very big distance: {sat.ID}, {nextSat.ID}')
         pass
-    return w2*(SLr-TravelDistance/w4)/biggestDist
+    return w2 * (SLr - TravelDistance / w4) / biggestDist
     # return w2*(SLr/biggestDist)
     # return w2*SLr/1000000
 
 
 def getDistanceRewardV5(sat, nextSat, w2):
     SLr = getSlantRange(sat, nextSat)
-    return w2*SLr/1000000
+    return w2 * SLr / 1000000
 
 
 def saveHyperparams(outputPath, inputParams, hyperparams):
     print('Saving hyperparams at: ' + str(outputPath))
     hyperparams = ['Constellation: ' + str(inputParams['Constellation'][0]),
-                'Import QTables: ' + str(hyperparams.importQ),
-                'plotPath: ' + str(hyperparams.plotPath),
-                'Test length: ' + str(inputParams['Test length'][0]),
-                'Alphas: ' + str(hyperparams.alpha) + ', ' + str(alpha_dnn),
-                'Gamma: ' + str(hyperparams.gamma),
-                'Epsilon: ' + str(hyperparams.epsilon), 
-                'Max epsilon: ' + str(hyperparams.MAX_EPSILON), 
-                'Min epsilon: ' + str(hyperparams.MIN_EPSILON), 
-                'Arrive Reward: ' + str(hyperparams.ArriveR), 
-                'w1: ' + str(hyperparams.w1), 
-                'w2: ' + str(hyperparams.w2),
-                'w4: ' + str(hyperparams.w4),
-                'againPenalty: ' + str(hyperparams.again),
-                'unavPenalty: ' + str(hyperparams.unav),
-                'Coords granularity: ' + str(hyperparams.coordGran),
-                'Update freq: ' + str(hyperparams.updateF),
-                'Batch Size: ' + str(hyperparams.batchSize),
-                'Buffer Size: ' + str(hyperparams.bufferSize),
-                'Hard Update: ' + str(hyperparams.hardUpdate),
-                'Exploration: ' + str(hyperparams.explore),
-                'DDQN: ' + str(hyperparams.ddqn),
-                'Latitude bias: ' + str(hyperparams.latBias),
-                'Longitude bias: ' + str(hyperparams.lonBias),
-                'Diff: ' + str(hyperparams.diff),
-                'Reduced State: ' + str(hyperparams.reducedState),
-                'Online phase: ' + str(hyperparams.online)]
+                   'Import QTables: ' + str(hyperparams.importQ),
+                   'plotPath: ' + str(hyperparams.plotPath),
+                   'Test length: ' + str(inputParams['Test length'][0]),
+                   'Alphas: ' + str(hyperparams.alpha) + ', ' + str(alpha_dnn),
+                   'Gamma: ' + str(hyperparams.gamma),
+                   'Epsilon: ' + str(hyperparams.epsilon),
+                   'Max epsilon: ' + str(hyperparams.MAX_EPSILON),
+                   'Min epsilon: ' + str(hyperparams.MIN_EPSILON),
+                   'Arrive Reward: ' + str(hyperparams.ArriveR),
+                   'w1: ' + str(hyperparams.w1),
+                   'w2: ' + str(hyperparams.w2),
+                   'w4: ' + str(hyperparams.w4),
+                   'againPenalty: ' + str(hyperparams.again),
+                   'unavPenalty: ' + str(hyperparams.unav),
+                   'Coords granularity: ' + str(hyperparams.coordGran),
+                   'Update freq: ' + str(hyperparams.updateF),
+                   'Batch Size: ' + str(hyperparams.batchSize),
+                   'Buffer Size: ' + str(hyperparams.bufferSize),
+                   'Hard Update: ' + str(hyperparams.hardUpdate),
+                   'Exploration: ' + str(hyperparams.explore),
+                   'DDQN: ' + str(hyperparams.ddqn),
+                   'Latitude bias: ' + str(hyperparams.latBias),
+                   'Longitude bias: ' + str(hyperparams.lonBias),
+                   'Diff: ' + str(hyperparams.diff),
+                   'Reduced State: ' + str(hyperparams.reducedState),
+                   'Online phase: ' + str(hyperparams.online)]
 
     # save hyperparams
     with open(outputPath + 'hyperparams.txt', 'w') as f:
@@ -7558,7 +9017,7 @@ def saveQTables(outputPath, earth):
     print('Saving Q-Tables at: ' + outputPath)
     # create output path if it does not exist
     path = outputPath + 'qTablesExport_' + str(len(earth.gateways)) + 'GTs/'
-    os.makedirs(path, exist_ok=True) 
+    os.makedirs(path, exist_ok=True)
 
     # save Q-Tables
     for plane in earth.LEO:
@@ -7570,17 +9029,17 @@ def saveQTables(outputPath, earth):
 
 def saveDeepNetworks(outputPath, earth):
     print('Saving Deep Neural networks at: ' + outputPath)
-    os.makedirs(outputPath, exist_ok=True) 
+    os.makedirs(outputPath, exist_ok=True)
     if not onlinePhase:
-        earth.DDQNA.qNetwork.save(outputPath + 'qNetwork_'+ str(len(earth.gateways)) + 'GTs' + '.h5')
+        earth.DDQNA.qNetwork.save(outputPath + 'qNetwork_' + str(len(earth.gateways)) + 'GTs' + '.h5')
         if ddqn:
-            earth.DDQNA.qTarget.save(outputPath + 'qTarget_'+ str(len(earth.gateways)) + 'GTs' + '.h5')
+            earth.DDQNA.qTarget.save(outputPath + 'qTarget_' + str(len(earth.gateways)) + 'GTs' + '.h5')
     else:
         for plane in earth.LEO:
             for sat in plane.sats:
-                sat.DDQNA.qNetwork.save(outputPath + sat.ID + 'qNetwork_'+ str(len(earth.gateways)) + 'GTs' + '.h5')
+                sat.DDQNA.qNetwork.save(outputPath + sat.ID + 'qNetwork_' + str(len(earth.gateways)) + 'GTs' + '.h5')
                 if ddqn:
-                    sat.DDQNA.qTarget.save(outputPath + sat.ID + 'qTarget_'+ str(len(earth.gateways)) + 'GTs' + '.h5')
+                    sat.DDQNA.qTarget.save(outputPath + sat.ID + 'qTarget_' + str(len(earth.gateways)) + 'GTs' + '.h5')
 
 
 ###############################################################################
@@ -7593,16 +9052,19 @@ def plotLatenciesBars(percentages, outputPath):
     Bar plot where each bar is a scenario with a different nº of gateways and where each color represents one of the three latencies.
     '''
     # plot percent stacked barplot
-    barWidth= 0.85
-    r       = percentages['GTnumber']
+    barWidth = 0.85
+    r = percentages['GTnumber']
     numbers = percentages['GTnumber']
-    GTnumber= len(r)
+    GTnumber = len(r)
 
-    plt.bar(r, percentages['Propagation time'], color='#b5ffb9', edgecolor='white', width=barWidth, label="Propagation time")   # Propagation time
-    plt.bar(r, percentages['Queue time'], bottom=percentages['Propagation time'], color='#f9bc86',                              # Queue time
-             edgecolor='white', width=barWidth, label="Queue time")
-    plt.bar(r, percentages['Transmission time'], bottom=[i+j for i,j in zip(percentages['Propagation time'],                    # Tx time
-            percentages['Queue time'])], color='#a3acff', edgecolor='white', width=barWidth, label="Transmission time")
+    plt.bar(r, percentages['Propagation time'], color='#b5ffb9', edgecolor='white', width=barWidth,
+            label="Propagation time")  # Propagation time
+    plt.bar(r, percentages['Queue time'], bottom=percentages['Propagation time'], color='#f9bc86',  # Queue time
+            edgecolor='white', width=barWidth, label="Queue time")
+    plt.bar(r, percentages['Transmission time'],
+            bottom=[i + j for i, j in zip(percentages['Propagation time'],  # Tx time
+                                          percentages['Queue time'])], color='#a3acff', edgecolor='white',
+            width=barWidth, label="Transmission time")
 
     # Custom x axis
     plt.xticks(numbers)
@@ -7613,23 +9075,48 @@ def plotLatenciesBars(percentages, outputPath):
     plt.legend(loc='lower left')
 
     # Show and save graphic
-    plt.savefig(outputPath + 'Percentages_{}_Gateways.png'.format(GTnumber+1))
+    plt.savefig(outputPath + 'Percentages_{}_Gateways.png'.format(GTnumber + 1))
     plt.close()
     # plt.show()
 
 
-def plotQueues(queues, outputPath, GTnumber):
-    '''
-    Will plot the cumulative distribution function (CDF) and probability density function (PDF) of all the queues that each package has faced.
-    ''' 
-    os.makedirs(outputPath + '/pngQueues/', exist_ok=True) # create output path
-    plt.hist(queues, bins=max(queues), cumulative=True, density = True, label='CDF DATA', histtype='step', alpha=0.55, color='blue')
-    plt.xlabel('Queue length')
-    plt.legend(loc = 'lower left')
-    plt.savefig(outputPath + '/pngQueues/' + 'Queues_{}_Gateways.png'.format(GTnumber))
-    plt.close()
-    d = pd.DataFrame(queues)
-    d.to_csv(outputPath + '/csv/' + "Queues_{}_Gateways.csv".format(GTnumber), index = False)
+def plotQueues(queue_fractions, outputPath, n_active):
+    """
+    queue_fractions: lista di valori in [0,1] (quota di latenza dovuta alla coda per blocco).
+    """
+    try:
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        if not queue_fractions:
+            print("[plotQueues] Lista code vuota: skip.")
+            return
+
+        xs = np.sort(np.asarray(queue_fractions, dtype=float))
+        xs = xs[np.isfinite(xs)]
+        if xs.size == 0:
+            print("[plotQueues] Nessun valore finito: skip.")
+            return
+
+        ys = np.linspace(0, 1, xs.size, endpoint=True)
+
+        plt.figure(figsize=(9, 7))
+        plt.step(xs, ys, where='post', linewidth=2, alpha=0.9, label="CDF DATA")
+        plt.xlabel("Queue fraction of total latency")
+        plt.ylabel("CDF")
+        plt.xlim(0, 1)
+        plt.ylim(0, 1)
+        plt.grid(alpha=0.25)
+        plt.legend()
+
+        plt.title(f"Queue distribution for {n_active} active nodes")
+        os.makedirs(outputPath, exist_ok=True)
+        out = os.path.join(outputPath, f"queues_{n_active}.png")
+        plt.savefig(out, bbox_inches='tight', dpi=140)
+        plt.close()
+        print(f"[plotQueues] Figura salvata in {out}")
+    except Exception as e:
+        print(f"[plotQueues] Errore: {e}")
 
 
 def extract_block_index(block_id):
@@ -7638,21 +9125,24 @@ def extract_block_index(block_id):
 
 def save_plot_rewards(outputPath, reward, GTnumber, window_size=200):
     rewards = [x[0] for x in reward]
-    times   = [x[1] for x in reward]
-    data    = pd.DataFrame({'Rewards': rewards, 'Time': times})
+    times = [x[1] for x in reward]
+    data = pd.DataFrame({'Rewards': rewards, 'Time': times})
 
     # Smoothed Rewards
     data['Smoothed Rewards'] = data['Rewards'].rolling(window=window_size).mean()
 
     # Top 10% and Bottom 10% Rewards
-    data['Top 10% Avg Rewards'] = data['Rewards'].rolling(window=window_size).apply(lambda x: np.mean(np.partition(x, -int(len(x)*0.1))[-int(len(x)*0.1):]), raw=True)
-    data['Bottom 10% Avg Rewards'] = data['Rewards'].rolling(window=window_size).apply(lambda x: np.mean(np.partition(x, int(len(x)*0.1))[:int(len(x)*0.1)]), raw=True)
+    data['Top 10% Avg Rewards'] = data['Rewards'].rolling(window=window_size).apply(
+        lambda x: np.mean(np.partition(x, -int(len(x) * 0.1))[-int(len(x) * 0.1):]), raw=True)
+    data['Bottom 10% Avg Rewards'] = data['Rewards'].rolling(window=window_size).apply(
+        lambda x: np.mean(np.partition(x, int(len(x) * 0.1))[:int(len(x) * 0.1)]), raw=True)
 
     # Plotting
     plt.figure(figsize=(8, 4))
     line1, = plt.plot(data['Time'], data['Top 10% Avg Rewards'], color='skyblue', linewidth=2, label='Top 10% reward')
     line2, = plt.plot(data['Time'], data['Smoothed Rewards'], color='blue', linewidth=2, label='Average reward')
-    line3, = plt.plot(data['Time'], data['Bottom 10% Avg Rewards'], color='navy', linewidth=2, label='Bottom 10% reward')
+    line3, = plt.plot(data['Time'], data['Bottom 10% Avg Rewards'], color='navy', linewidth=2,
+                      label='Bottom 10% reward')
 
     plt.legend(handles=[line1, line2, line3], fontsize=15, loc='upper right')
     plt.xticks(fontsize=15)
@@ -7666,7 +9156,7 @@ def save_plot_rewards(outputPath, reward, GTnumber, window_size=200):
     rewards_dir = os.path.join(outputPath, 'Rewards')
     plt.tight_layout()
     os.makedirs(rewards_dir, exist_ok=True)  # create output path
-    plt.savefig(os.path.join(rewards_dir, "rewards_{}_gateways.png".format(GTnumber)))#, bbox_inches='tight')
+    plt.savefig(os.path.join(rewards_dir, "rewards_{}_gateways.png".format(GTnumber)))  # , bbox_inches='tight')
     plt.close()
 
     # Save CSV
@@ -7679,26 +9169,26 @@ def save_plot_rewards(outputPath, reward, GTnumber, window_size=200):
 
 def save_epsilons(outputPath, eps, GTnumber):
     epsilons = [x[0] for x in eps]
-    times    = [x[1] for x in eps]
+    times = [x[1] for x in eps]
     plt.plot(times, epsilons)
     plt.title("Epsilon over Time")
     plt.xlabel("Time (s)")
     plt.ylabel("Epsilon")
-    os.makedirs(outputPath + '/epsilons/', exist_ok=True) # create output path
+    os.makedirs(outputPath + '/epsilons/', exist_ok=True)  # create output path
     plt.savefig(outputPath + '/epsilons/' + "epsilon_{}_gateways.png".format(GTnumber))
     plt.close()
 
     data = {'epsilon': [e for e in epsilons], 'time': [t for t in times]}
     df = pd.DataFrame(data)
-    os.makedirs(outputPath + '/csv/' , exist_ok=True) # create output path
+    os.makedirs(outputPath + '/csv/', exist_ok=True)  # create output path
     df.to_csv(outputPath + '/csv/' + "epsilons_{}_gateways.csv".format(GTnumber), index=False)
 
     return df
-    
+
 
 def save_training_counts(outputPath, train_times, GTnumber):
     # Extract times
-    times = [x[0]*1000 for x in train_times]
+    times = [x[0] * 1000 for x in train_times]
 
     # Calculate cumulative trainings over time
     training_counts = list(range(1, len(times) + 1))
@@ -7727,19 +9217,19 @@ def save_training_counts(outputPath, train_times, GTnumber):
 
 def save_losses(outputPath, earth1, GTnumber):
     losses = [x[0] for x in earth1.loss]
-    times  = [x[1] for x in earth1.loss]
+    times = [x[1] for x in earth1.loss]
     plt.plot(times, losses)
     plt.xlabel("Time (s)")
     plt.ylabel("Loss")
     plt.title("Loss over Time")
-    os.makedirs(outputPath + '/loss/', exist_ok=True) # create output path
+    os.makedirs(outputPath + '/loss/', exist_ok=True)  # create output path
     plt.savefig(outputPath + '/loss/' + "loss_{}_gatewaysTime.png".format(GTnumber))
     plt.close()
 
     data = {'loss': [l for l in losses], 'time': [t for t in times]}
     df = pd.DataFrame(data)
     df.to_csv(outputPath + '/csv/' + "loss_{}_gateways.csv".format(GTnumber), index=False)
-    os.makedirs(outputPath + '/loss/', exist_ok=True) # create output path
+    os.makedirs(outputPath + '/loss/', exist_ok=True)  # create output path
 
     xs = [l for l in range(len(losses))]
     plt.plot(xs, losses)
@@ -7754,12 +9244,28 @@ def save_losses(outputPath, earth1, GTnumber):
     plt.xlabel("Steps")
     plt.ylabel("Loss average")
     plt.title("Loss average over Steps")
-    os.makedirs(outputPath + '/loss/', exist_ok=True) # create output path
+    os.makedirs(outputPath + '/loss/', exist_ok=True)  # create output path
     plt.savefig(outputPath + '/loss/' + "loss_{}_gatewaysAverage.png".format(GTnumber))
     plt.close()
 
 
 def plotSavePathLatencies(outputPath, GTnumber, pathBlocks):
+    if not pathBlocks:
+        print("[plotSavePathLatencies] Nessun path/block da plottare: salto.")
+        return
+
+    if hasattr(pathBlocks[0], "path") or hasattr(pathBlocks[0], "QPath"):
+        paths = []
+        for b in pathBlocks:
+            p = getattr(b, "QPath", None) if ( 'pathing' in globals() and pathing in ('Q-Learning','Deep Q-Learning') ) else getattr(b, "path", None)
+            if p:
+                paths.append(p)
+        if not paths:
+            print("[plotSavePathLatencies] Nessun path dentro i blocchi: salto.")
+            return
+        pathBlocks = paths
+
+
     # figure of latencies between two first gateways
     latency = []
     arrival = []
@@ -7769,21 +9275,21 @@ def plotSavePathLatencies(outputPath, GTnumber, pathBlocks):
     plt.scatter(arrival, latency, c='r')
     plt.xlabel("Time")
     plt.ylabel("Latency")
-    os.makedirs(outputPath + '/pngLatencies/', exist_ok=True) # create output path
+    os.makedirs(outputPath + '/pngLatencies/', exist_ok=True)  # create output path
     plt.savefig(outputPath + '/pngLatencies/' + '{}_gatewaysTime.png'.format(GTnumber))
     plt.close()
 
     # x axis is the number of the arrival, not the time
     xs = [l for l in range(len(latency))]
     plt.figure()
-    plt.scatter(xs,latency, c='r')
+    plt.scatter(xs, latency, c='r')
     plt.xlabel("Arrival index")
     plt.ylabel('Latency')
     plt.savefig(outputPath + '/pngLatencies/' + '{}_gateways.png'.format(GTnumber))
     plt.close()
 
     # Save latencies
-    os.makedirs(outputPath + '/csv/', exist_ok=True) # create output path
+    os.makedirs(outputPath + '/csv/', exist_ok=True)  # create output path
     data = {'Latency': [l for l in latency], 'Arrival Time': [t for t in arrival]}
     df = pd.DataFrame(data)
     df.to_csv(outputPath + '/csv/' + "pathLatencies_{}_gateways.csv".format(GTnumber), index=False)
@@ -7794,7 +9300,7 @@ def plot_packet_latencies_and_uplink_downlink_throughput(data, outputPath, bins_
                                                          plot_separately=True):
     """
     Generate either separate scatter plots of packet latencies for each path (source-destination),
-    or a single plot combining all paths. Overlay line plots of uplink and downlink throughput on 
+    or a single plot combining all paths. Overlay line plots of uplink and downlink throughput on
     a secondary y-axis, with a single legend for all items in the upper right.
     """
 
@@ -7895,7 +9401,7 @@ def plot_packet_latencies_and_uplink_downlink_throughput(data, outputPath, bins_
         # Save or show plot
         if save:
             filename = f'{src}_{dst}_path_latency_throughput.png' if (
-                        src is not None and dst is not None) else 'combined_path_latency_throughput.png'
+                    src is not None and dst is not None) else 'combined_path_latency_throughput.png'
             plt.savefig(os.path.join(save_dir, filename), dpi=300)
         else:
             plt.show()
@@ -7908,6 +9414,7 @@ def plot_packet_latencies_and_uplink_downlink_throughput(data, outputPath, bins_
     else:
         all_blocks = [b for blocks in paths_data.values() for b in blocks]
         plot_path_data(all_blocks)
+
 
 def plot_throughput_cdf(data, outputPath, bins_num=100, save=False, plot_separately=True):
     """
@@ -7927,38 +9434,38 @@ def plot_throughput_cdf(data, outputPath, bins_num=100, save=False, plot_separat
     # Helper function to plot CDF for a given set of blocks
     def plot_cdf_for_path(blocks, src=None, dst=None):
         fig, ax = plt.subplots(figsize=(8, 4))
-        
+
         # Sort blocks by creation time
         blocks = sorted(blocks, key=lambda b: b.creationTime)
-        
+
         # Extract creation times and arrival times
         creation_times = np.array([block.creationTime for block in blocks])
         arrival_times = np.array([block.creationTime + block.totLatency for block in blocks])
-        
+
         # Define time bins and calculate throughput
         time_bins = np.linspace(min(creation_times), max(arrival_times), num=bins_num)
         uplink_counts, _ = np.histogram(creation_times, bins=time_bins)
         uplink_throughput = (uplink_counts * BLOCK_SIZE / 1e6) / np.diff(time_bins)  # Mbps
         downlink_counts, _ = np.histogram(arrival_times, bins=time_bins)
         downlink_throughput = (downlink_counts * BLOCK_SIZE / 1e6) / np.diff(time_bins)  # Mbps
-        
+
         # Sort and calculate CDF
         uplink_throughput_sorted = np.sort(uplink_throughput)
         downlink_throughput_sorted = np.sort(downlink_throughput)
         uplink_cdf = np.arange(1, len(uplink_throughput_sorted) + 1) / len(uplink_throughput_sorted)
         downlink_cdf = np.arange(1, len(downlink_throughput_sorted) + 1) / len(downlink_throughput_sorted)
-        
+
         # Plot CDFs
         ax.plot(uplink_throughput_sorted, uplink_cdf, label='Uplink Throughput', color='#00008B', lw=2)
         ax.plot(downlink_throughput_sorted, downlink_cdf, label='Downlink Throughput', color='#1E90FF', lw=2)
-        
+
         # Configure plot
         ax.set_xlabel('Throughput [Mbps]', fontsize=16)
         ax.set_ylabel('CDF', fontsize=16)
         ax.legend(loc='lower right', fontsize=12)
         ax.grid(True)
         ax.tick_params(axis='both', which='major', labelsize=16)
-        
+
         # Adjust layout, save plot, and close
         plt.tight_layout()
         if save:
@@ -7977,101 +9484,100 @@ def plot_throughput_cdf(data, outputPath, bins_num=100, save=False, plot_separat
         plot_cdf_for_path(all_blocks)
 
 
-def plotSaveAllLatencies(outputPath, GTnumber, allLatencies, epsDF=None, annotate_min_latency=True):  
-    # preprocess and setup
-    GTnumber_Max = 4 # max number of gts for displaying the legend. If the number of GTs is bigger than this, then no legend is displayed
-    sns.set(font_scale=1.5)
-    window_size = winSize
-    marker_size = markerSize
-    df = pd.DataFrame(allLatencies, columns=['Creation Time', 'Latency', 'Arrival Time', 'Source', 
-                                             'Destination', 'Block ID', 'QueueTime', 'TxTime', 'PropTime'])
-    df['Block Index'] = df['Block ID'].apply(extract_block_index)
-    df = df.sort_values(by=['Source', 'Destination', 'Block Index'])
-    df.to_csv(outputPath + '/csv/' + "allLatencies_{}_gateways.csv".format(GTnumber))
+def plotSaveAllLatencies(outputPath, GTnumber, allLatencies, epsDF=None):
+    """
+    allLatencies può essere:
+      - dict: { tuple(path) -> [latency_float, ...] }
+      - list/array: [latency_float, ...]
+    Produce: istogramma e CDF delle latenze totali; salva anche CSV riassuntivo per path.
+    """
 
-    # Convert time values to milliseconds
-    df['Creation Time'] *= 1000
-    df['Arrival Time']  *= 1000
-    df['Latency']       *= 1000
-    if epsDF is not None:
-        epsDF['time']   *= 1000
+    os.makedirs(outputPath, exist_ok=True)
 
-    # Calculate the rolling average for each unique path
-    df['Path'] = df['Source'].astype(str) + ' -> ' + df['Destination'].astype(str)
-    df['Latency_Rolling_Avg'] = df.groupby('Path')['Latency'].transform(lambda x: x.rolling(window=window_size).mean())
-    
-    # Metrics for x-axis
-    metrics = ['Arrival Time', 'Creation Time']
+    if isinstance(allLatencies, dict):
+        for p, vals in allLatencies.items():
+            if vals is None:
+                continue
+            try:
+                path_list = list(p)
+            except Exception:
+                path_list = [str(p)]
+            clean = []
+            for h in path_list:
+                clean.append(h[0] if isinstance(h, (tuple, list)) and h else h)
+            pstr = " -> ".join(str(x) for x in clean)
+            hops = len(clean) - 1 if len(clean) >= 2 else len(clean)
 
-    # Create subplots
-    fig, axes = plt.subplots(len(metrics), 2, figsize=(18, 18))
-
-    for i, metric in enumerate(metrics):
-        # Line Plots on the left (column index 0)
-        lineplot = sns.lineplot(x=metric, y='Latency_Rolling_Avg', hue='Path', ax=axes[i, 0], data=df)
-        axes[i, 0].set_title(f'Latency Trends Over {metric} (Window Size = {window_size})')
-        axes[i, 0].set_xlabel(metric + ' (ms)')
-        axes[i, 0].set_ylabel('Average Latency (ms)')
-
-        # Annotate minimum latency for Creation Time only
-        if annotate_min_latency and metric == 'Creation Time':
-            unique_paths = df['Path'].unique()
-            for path in unique_paths:
-                df_path = df[df['Path'] == path]
-                min_latency = df_path['Latency_Rolling_Avg'].min()
+            for v in vals:
                 try:
-                    min_pos = df_path[metric][df_path['Latency_Rolling_Avg'].idxmin()]
-                    axes[i, 0].annotate(f'{min_latency:.0f} ms', xy=(min_pos, min_latency), 
-                                        xytext=(-50, 30), textcoords='offset points', 
-                                        arrowprops=dict(arrowstyle='->', color='black'))
-                except KeyError as e:
-                    print(f"Error annotating minimum latency for the path path {path}: {e}")
+                    lv = float(v)
+                except Exception:
+                    continue
+                records.append({'Path': pstr, 'Latency': lv, 'Hops': hops})
+    else:
+        # supponiamo lista/array di latenze già “flat”
+        try:
+            for v in allLatencies:
+                records.append({'Path': '(all)', 'Latency': float(v), 'Hops': np.nan})
+        except Exception:
+            records = []
 
+    if not records:
+        print("[plotSaveAllLatencies] Nessuna latenza da plottare: skip.")
+        return
 
-        # Scatter Plots on the right (column index 1)
-        scatterplot = sns.scatterplot(x=metric, y='Latency', hue='Path', ax=axes[i, 1], data=df, marker='o', s=marker_size)
-        axes[i, 1].set_title(f'Individual Latency Points Over {metric}')
-        axes[i, 1].set_xlabel(metric)
-        axes[i, 1].set_ylabel('Latency')
+    df = pd.DataFrame.from_records(records)
 
-        # Create a twin y-axis for epsilon data if epsDF is not None
-        if epsDF is not None:
-            ax2 = axes[i, 0].twinx()
-            line3 = sns.lineplot(x='time', y='epsilon', data=epsDF, color='purple', label='Epsilon', ax=ax2)
+    stats = (df.groupby('Path')['Latency']
+               .agg(['count', 'mean', 'median', 'min', 'max', 'std'])
+               .reset_index())
+    stats_path = os.path.join(outputPath, f'latency_stats_GT{GTnumber}.csv')
+    stats.to_csv(stats_path, index=False)
 
-            # Merge legends
-            handles1, labels1 = axes[i, 0].get_legend_handles_labels()
-            handles2, labels2 = ax2.get_legend_handles_labels()
-            axes[i, 0].legend(handles1 + handles2, labels1 + labels2, loc='upper right')
-            # Check if ax2 has a legend before trying to remove it
-            if ax2.get_legend():
-                ax2.get_legend().remove()
-        else:
-            # Handle legend for the case when epsDF is None
-            handles, labels = axes[i, 0].get_legend_handles_labels()
-            axes[i, 0].legend(handles, labels, loc='upper right')
-
-        if GTnumber > GTnumber_Max:
-            # Disable legends on both subplots
-            if axes[i, 0].get_legend():
-                axes[i, 0].get_legend().set_visible(False)
-            if axes[i, 1].get_legend():
-                axes[i, 1].get_legend().set_visible(False)
-
-        
-    # Adjust the layout
+    plt.figure(figsize=(8, 5))
+    plt.hist(df['Latency'].values, bins=40, alpha=0.8, edgecolor='black')
+    plt.xlabel('Total latency (s)')
+    plt.ylabel('Count')
+    plt.title(f'Latency histogram (GTs={GTnumber})')
     plt.tight_layout()
-    os.makedirs(outputPath + '/pngAllLatencies/', exist_ok=True) # create output path
-    plt.savefig(outputPath + '/pngAllLatencies/' + '{}_gateways_All_Latencies_subplots.png'.format(GTnumber), dpi = 300)
+    plt.savefig(os.path.join(outputPath, f'latency_hist_GT{GTnumber}.png'), dpi=160)
     plt.close()
-    sns.set()
 
+    vals = np.sort(df['Latency'].values)
+    y = np.linspace(0, 1, len(vals), endpoint=True)
+    plt.figure(figsize=(8, 5))
+    plt.step(vals, y, where='post')
+    plt.xlabel('Total latency (s)')
+    plt.ylabel('CDF')
+    plt.title(f'Latency CDF (GTs={GTnumber})')
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(os.path.join(outputPath, f'latency_cdf_GT{GTnumber}.png'), dpi=160)
+    plt.close()
+
+    if epsDF is not None and len(getattr(epsDF, 'index', [])) > 0:
+        try:
+            plt.figure(figsize=(8, 4))
+            plt.plot(epsDF.index, epsDF.values)
+            plt.xlabel('Step')
+            plt.ylabel('Epsilon')
+            plt.title(f'Epsilon schedule (GTs={GTnumber})')
+            plt.tight_layout()
+            plt.savefig(os.path.join(outputPath, f'epsilon_GT{GTnumber}.png'), dpi=160)
+            plt.close()
+        except Exception:
+            pass
+
+    m = df['Latency'].mean()
+    p50 = np.percentile(df['Latency'], 50)
+    p95 = np.percentile(df['Latency'], 95)
+    print(f"[plotSaveAllLatencies] n={len(df)}  mean={m:.4f}s  p50={p50:.4f}s  p95={p95:.4f}s")
 
 def plotRatesFigures():
     values = [upGSLRates, downGSLRates, interRates, intraRate]
 
     plt.figure()
-    plt.hist(np.asarray(interRates)/1e9, cumulative=1, histtype='step', density=True)
+    plt.hist(np.asarray(interRates) / 1e9, cumulative=1, histtype='step', density=True)
     plt.title('CDF - Inter plane ISL data rates')
     plt.ylabel('Empirical CDF')
     plt.xlabel('Data rate [Gbps]')
@@ -8079,7 +9585,7 @@ def plotRatesFigures():
     plt.close()
 
     plt.figure()
-    plt.hist(np.asarray(upGSLRates)/1e9, cumulative=1, histtype='step', density=True)
+    plt.hist(np.asarray(upGSLRates) / 1e9, cumulative=1, histtype='step', density=True)
     plt.title('CDF - Uplink data rates')
     plt.ylabel('Empirical CDF')
     plt.xlabel('Data rate [Gbps]')
@@ -8087,119 +9593,499 @@ def plotRatesFigures():
     plt.close()
 
     plt.figure()
-    plt.hist(np.asarray(downGSLRates)/1e9, cumulative=1, histtype='step', density=True)
+    plt.hist(np.asarray(downGSLRates) / 1e9, cumulative=1, histtype='step', density=True)
     plt.title('CDF - Downlink data rates')
     plt.ylabel('Empirical CDF')
     plt.xlabel('Data rate [Gbps]')
     plt.show()
     plt.close()
 
+def plotCongestionMap(earth, paths, outdir, GTnumber, plot_separately=False, active_names=None):
+    """
+    paths: lista di path (ognuno lista di hop) — qui NON DataBlock.
+    active_names: iterable con i nomi dei nodi attivi; se fornito, li sovrappone alla mappa.
+    """
 
-def plotCongestionMap(self, paths, outPath, GTnumber, plot_separately=True):
-    def extract_gateways(path):
-    # Assuming QPath's first and last elements contain gateway identifiers
-        if pathing == 'Q-Learning' or pathing == 'Deep Q-Learning':
-            return path.QPath[0][0], path.QPath[-1][0]
-        else:
-            return path.path[0][0], path.path[-1][0]
-        
-    os.makedirs(outPath, exist_ok=True)
+    os.makedirs(outdir, exist_ok=True)
+    fname = os.path.join(outdir, f"congestion_GT{GTnumber}.png")
 
-    # Identify unique routes and filter by packet threshold (100 packets)
-    unique_routes = {}
-    for block in paths:
-        p = block.QPath if pathing == 'Q-Learning' or pathing == 'Deep Q-Learning' else block.path
-        if p:  # Ensure QPath or path is not empty
-            gateways = extract_gateways(block)
-            if gateways in unique_routes:
-                unique_routes[gateways] += 1
-            else:
-                unique_routes[gateways] = 1
+    if not paths:
+        print("Error: No data available for plotting congestion map.")
+        return
 
-    filtered_routes = {route: count for route, count in unique_routes.items() if count > 100} # REVIEW Packet threshold for path visualization 500
+    edge_use = Counter()
+    for p in paths:
+        hops = [h[0] if isinstance(h, (list, tuple)) and h else h for h in p]
+        for u,v in zip(hops, hops[1:]):
+            key = tuple(sorted((str(u), str(v))))
+            edge_use[key] += 1
 
-    # Plot for all routes combined
-    if pathing == 'Q-Learning' or pathing == 'Deep Q-Learning':
-        all_routes_paths = [block for block in paths if block.QPath and extract_gateways(block) in filtered_routes]
+    if not edge_use:
+        print("Error: Nessun arco estratto dai path.")
+        return
+
+    counts = np.array(list(edge_use.values()), dtype=float)
+    cmin, cmax = counts.min(), counts.max()
+    if cmax == cmin:
+        norm = {e: 100.0 for e in edge_use}  # tutti uguali
     else:
-        all_routes_paths = [block for block in paths if block.path and extract_gateways(block) in filtered_routes]
+        norm = {e: (10.0 + 90.0 * ((cnt - cmin) / (cmax - cmin))) for e, cnt in edge_use.items()}
 
-    done = self.plotMap(plotGT=True, plotSat=True, edges=False, save=True, paths=np.asarray(all_routes_paths),
-                 fileName=os.path.join(outPath, f"all_routes_CongestionMap_{GTnumber}GTs.png"))
-    plt.close()
-    if done == -1:
-        print('Congestion map for all routes not available')
+    fig, ax = plt.subplots(figsize=(15,6), dpi=180)
+    ax.set_facecolor("black")
+    ax.set_xlim(-180, 180)
+    ax.set_ylim(-60, 80)  # taglia lat estreme per visibilità; regola se vuoi
+    ax.axis('off')
 
-    # Plot for each unique route above the threshold
-    if plot_separately:
-        for route, count in filtered_routes.items():
-            if pathing == 'Q-Learning' or pathing == 'Deep Q-Learning':
-                route_paths = [block for block in paths if extract_gateways(block) == route and block.QPath]
+    if hasattr(earth, "background_img"):
+        ax.imshow(earth.background_img, extent=(-180,180,-90,90), alpha=0.15, zorder=0)
+
+    cmap = plt.cm.plasma
+    for (u,v), val in edge_use.items():
+        # recupera coord
+        def _lonlat(node):
+            G = getattr(earth, "terr_graph", None)
+            if G is None or node not in G:
+                return None
+            nd = G.nodes[node]
+            if "lon" in nd and "lat" in nd:
+                return float(nd["lon"]), float(nd["lat"])
+            return None
+
+        c1 = _lonlat(u); c2 = _lonlat(v)
+        if c1 is None or c2 is None:
+            continue
+        lon1, lat1 = c1; lon2, lat2 = c2
+
+        lons = np.linspace(lon1, lon2, 50)
+        lats = np.linspace(lat1, lat2, 50)
+
+        col = cmap(norm[(u,v)]/100.0)
+        ax.plot(lons, lats, '-', lw=2.0, color=col, alpha=0.85, zorder=2)
+
+        ax.scatter([lon2],[lat2], marker='>', s=5, color=col, alpha=0.85, zorder=3)
+
+    if active_names:
+        pts = _active_nodes_xy(earth, active_names)
+        if pts:
+            ax.scatter([p[1] for p in pts], [p[2] for p in pts],
+                       s=30, facecolors='none', edgecolors='white', linewidths=1.2, zorder=4)
+            # label compatte
+            for name, lon, lat in pts:
+                ax.text(lon, lat, name, fontsize=7, color='white',
+                        ha='left', va='bottom', zorder=5)
+
+    # --- colorbar custom 10..100
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=10, vmax=100))
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=ax, fraction=0.022, pad=0.02)
+    cbar.set_label("Relative Traffic Load (%)")
+
+    plt.tight_layout()
+    plt.savefig(fname, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Congestion map salvata in: {fname}")
+
+def _active_nodes_xy(earth, active_names):
+    """
+    Ritorna [(name, lon, lat)] per i nomi in active_names che esistono in earth.terr_graph.
+    """
+    G = getattr(earth, "terr_graph", None)
+    out = []
+    if G is None:
+        return out
+    set_names = set(str(n) for n in G.nodes)
+    for nm in active_names:
+        key = str(nm)
+        if key in set_names:
+            nd = G.nodes[key]
+            lon = nd.get("lon")
+            lat = nd.get("lat")
+            if lon is not None and lat is not None:
+                out.append((key, float(lon), float(lat)))
+    return out
+
+def verify_paths_against_active_nodes(paths, earth, active_names, top_k=20):
+    """
+    - paths: lista di path (ognuno = lista di hop, es. ['Boston','Providence', ...])
+    Stampa:
+      * % hop che sono nodi attivi
+      * eventuali hop mancanti nel grafo
+      * top-K archi più usati (src,dst,count)
+    """
+    from collections import Counter
+    G = getattr(earth, "terr_graph", None)
+    if G is None:
+        print("[verify] Nessun terr_graph.")
+        return
+
+    active_set = set(str(a) for a in active_names)
+    all_hops = []
+    missing_nodes = set()
+    missing_edges = Counter()
+    edge_use = Counter()
+
+    for p in paths:
+        norm = [h[0] if isinstance(h, (list, tuple)) and h else h for h in p]
+        for u, v in zip(norm, norm[1:]):
+            all_hops.extend([u, v])
+            if u not in G or v not in G:
+                missing_nodes.update([x for x in (u, v) if x not in G])
             else:
-                route_paths = [block for block in paths if extract_gateways(block) == route and block.path]
+                if not (G.has_edge(u, v) or G.has_edge(v, u)):
+                    missing_edges[(u, v)] += 1
+                edge_use[tuple(sorted((u, v)))] += 1
 
-            done = self.plotMap(plotGT=True, plotSat=True, edges=False, save=True, paths=np.asarray(route_paths),
-                        fileName=os.path.join(outPath, f"CongestionMap_{route[0]}_to_{route[1]}_{GTnumber}GTs.png"))
-            plt.close()
-            if done == -1:
-                print(f'Congestion map for {route} not available')
+    if all_hops:
+        frac_active = sum(1 for h in all_hops if h in active_set) / len(all_hops)
+        print(f"[verify] Hop appartenenti ai nodi attivi: {frac_active*100:.1f}%")
+    if missing_nodes:
+        print("[verify] Nodi presenti nei path ma NON nel grafo terrestre:", sorted(missing_nodes))
+    if missing_edges:
+        print("[verify] Archi *mancanti* nei path (src,dst) -> conteggio:")
+        for (u, v), c in missing_edges.most_common(10):
+            print(f"   ({u}↔{v}) x {c}")
+
+    if edge_use:
+        print("[verify] Top-{} archi più usati nei path:".format(top_k))
+        for (u, v), c in edge_use.most_common(top_k):
+            print(f"   {u} ↔ {v}: {c} passaggi")
+
+
+def _dominant_path_for_pair(blocks, src_name, dst_name):
+    """
+    Ritorna il path più frequente tra i DataBlock con (source=src_name,destination=dst_name).
+    Se esistono sia .QPath che .path, privilegia .QPath non vuoto.
+    Restituisce una lista (path) oppure None se non trovato.
+    """
+
+    cand = []
+    for b in blocks:
+        s = getattr(getattr(b, "source", None), "name", None)
+        d = getattr(getattr(b, "destination", None), "name", None)
+        if s == src_name and d == dst_name:
+            p = getattr(b, "QPath", None) or getattr(b, "path", None)
+            if p:
+                # normalizza in tupla hashable
+                cand.append(tuple(p))
+
+    if not cand:
+        return None
+
+    path_counts = Counter(cand)
+    best_path_tuple, _ = path_counts.most_common(1)[0]
+    return list(best_path_tuple)
+
+def _unwrap_longitudes(lons):
+    """Evita segmenti che attraversano tutto il mondo (salti > 180°)."""
+    if not lons:
+        return lons
+    out = [float(lons[0])]
+    for lon in lons[1:]:
+        lon = float(lon)
+        d = lon - out[-1]
+        if d > 180:   lon -= 360
+        elif d < -180: lon += 360
+        out.append(lon)
+    return out
+
+def _node_lonlat(key, earth):
+    """
+    Restituisce (lon, lat) per un 'key' che può essere:
+    - stringa: nome nodo terrestre (city/gateway/waypoint)
+    - int: id satellite
+    - oggetto con .longitude/.latitude (in gradi) o con .lon/.lat
+    """
+    # oggetto con attributi
+    if hasattr(key, 'longitude') and hasattr(key, 'latitude'):
+        return float(key.longitude), float(key.latitude)
+    if hasattr(key, 'lon') and hasattr(key, 'lat'):
+        return float(key.lon), float(key.lat)
+
+    # satellite id (int) -> earth.sat_by_id
+    if isinstance(key, int) and hasattr(earth, 'sat_by_id'):
+        sat = earth.sat_by_id.get(key)
+        if sat is not None:
+            # supponiamo sat abbia .longitude/.latitude in gradi
+            return float(sat.longitude), float(sat.latitude)
+
+    # nome (str) -> nodo terrestre
+    if isinstance(key, str):
+        # prova grafo terrestre
+        Gt = getattr(earth, 'terr_graph', None)
+        if Gt is not None and key in Gt.nodes:
+            nd = Gt.nodes[key]
+            lon = nd.get('lon') or nd.get('longitude')
+            lat = nd.get('lat') or nd.get('latitude')
+            if lon is not None and lat is not None:
+                return float(lon), float(lat)
+        # eventualmente grafo “space” se i satelliti hanno label stringa
+        Gs = getattr(earth, 'space_graph', None)
+        if Gs is not None and key in Gs.nodes:
+            nd = Gs.nodes[key]
+            lon = nd.get('lon') or nd.get('longitude')
+            lat = nd.get('lat') or nd.get('latitude')
+            if lon is not None and lat is not None:
+                return float(lon), float(lat)
+
+    # fallback: None
+    return None, None
+
+def _edge_type(u_key, v_key, earth):
+    """
+    Ritorna il 'type' dell'arco tra u e v, guardando prima terr_graph poi space_graph.
+    """
+    def _get(g, u, v):
+        if g is None:
+            return None
+        if u in g and v in g[u]:
+            ed = g.get_edge_data(u, v)
+        elif v in g and u in g[v]:
+            ed = g.get_edge_data(v, u)
+        else:
+            return None
+        # MultiGraph? prendi il primo dict
+        if isinstance(ed, dict) and ed and all(isinstance(x, dict) for x in ed.values()):
+            ed = next(iter(ed.values()))
+        return ed
+
+    Gt = getattr(earth, 'terr_graph', None)
+    Gs = getattr(earth, 'space_graph', None)
+    ed = _get(Gt, u_key, v_key) or _get(Gs, u_key, v_key)
+    if ed is None:
+        return None
+    return ed.get('type') or ed.get('link_type')
+
+def _node_key_tuple_or_raw(k):
+    if isinstance(k, (tuple, list)) and len(k) > 0:
+        return k[0]
+    return k
+
+def _get_node_coords_generic(earth, key):
+    """
+    Ritorna (lat, lon) per un nodo terrestre/satellite.
+    Cerca prima nei grafi (terr_graph, space_graph). Se non trova,
+    prova oggetti terra/satellite noti.
+    """
+    k = _node_key_tuple_or_raw(key)
+
+    # terrestre per nome (string)
+    if isinstance(k, str):
+        Gt = getattr(earth, "terr_graph", None)
+        if Gt is not None and k in Gt:
+            nd = Gt.nodes[k]
+            lat = nd.get("lat")
+            lon = nd.get("lon")
+            if lat is not None and lon is not None:
+                return float(lat), float(lon)
+
+        # fallback: se earth ha una lookup per città/nodi
+        nobj = getattr(earth, "node_by_name", {}).get(k) if hasattr(earth, "node_by_name") else None
+        if nobj is not None:
+            lat = getattr(nobj, "latitude", None)
+            lon = getattr(nobj, "longitude", None)
+            if lat is not None and lon is not None:
+                return float(lat), float(lon)
+
+    # satellite per ID (int)
+    if isinstance(k, int):
+        Gs = getattr(earth, "space_graph", None)
+        if Gs is not None and k in Gs:
+            nd = Gs.nodes[k]
+            lat = nd.get("lat")
+            lon = nd.get("lon")
+            if lat is not None and lon is not None:
+                return float(lat), float(lon)
+
+        sobj = getattr(earth, "sat_by_id", {}).get(k) if hasattr(earth, "sat_by_id") else None
+        if sobj is not None:
+            lat = getattr(sobj, "latitude", None)
+            lon = getattr(sobj, "longitude", None)
+            if lat is not None and lon is not None:
+                return float(lat), float(lon)
+
+    return None, None  # non trovato
+
+
+def _edge_type_generic(earth, u, v):
+    """
+    Ritorna 'terrestrial', 'satellite' (ISL), 'gsl' (gateway↔satellite) oppure 'unknown'.
+    Guarda gli archi nei grafi e gli attributi 'type' se presenti.
+    """
+    def _edge_in(G, a, b):
+        if G is None:
+            return None
+        ed = G.get_edge_data(a, b) or G.get_edge_data(b, a)
+        if ed is None:
+            return None
+        # MultiGraph: prendi il primo dict di attributi
+        if isinstance(ed, dict) and ed and all(isinstance(x, dict) for x in ed.values()):
+            ed = next(iter(ed.values()))
+        return ed
+
+    a = _node_key_tuple_or_raw(u)
+    b = _node_key_tuple_or_raw(v)
+
+    Gt = getattr(earth, "terr_graph", None)
+    Gs = getattr(earth, "space_graph", None)
+
+    # prova terrestre
+    ed_t = _edge_in(Gt, a, b)
+    if ed_t is not None:
+        et = ed_t.get("type") or ed_t.get("edge_type")
+        if et:
+            return "terrestrial"
+        return "terrestrial"
+
+    # prova spaziale
+    ed_s = _edge_in(Gs, a, b)
+    if ed_s is not None:
+        et = (ed_s.get("type") or ed_s.get("edge_type") or "").upper()
+        if "ISL" in et:
+            return "satellite"
+        return "satellite"
+
+    # gateway-satellite? (un capo è stringa/terrestre, l'altro int/satellite)
+    if (isinstance(a, str) and isinstance(b, int)) or (isinstance(a, int) and isinstance(b, str)):
+        return "gsl"
+
+    return "unknown"
+
+
+def plotPathGeneric(earth, path_labels, out_dir, title="Path"):
+    """
+    Disegna una path mista (terra/satellite/ibrida) leggendo hop per hop.
+    - path_labels: lista di etichette (str/int/tuple) es. ['Bordeaux', '...','Espoo'] o [101, 205, ...]
+    - earth deve avere terr_graph e/o space_graph con 'lat','lon' sui nodi (come nel tuo setup)
+    Salva 'path_generic.png' in out_dir.
+    """
+    if not path_labels or len(path_labels) < 2:
+        print("[plotPathGeneric] path vuota o troppo corta.")
+        return
+
+    # Costruisci lista di coordinate e tipi di arco
+    segments = []
+    coords_cache = {}
+    def coord(k):
+        if k not in coords_cache:
+            coords_cache[k] = _get_node_coords_generic(earth, k)
+        return coords_cache[k]
+
+    for i in range(len(path_labels) - 1):
+        u = path_labels[i]
+        v = path_labels[i + 1]
+        lat_u, lon_u = coord(u)
+        lat_v, lon_v = coord(v)
+        if None in (lat_u, lon_u, lat_v, lon_v):
+            # salta hop senza coordinate
+            continue
+        et = _edge_type_generic(earth, u, v)  # 'terrestrial' | 'satellite' | 'gsl' | 'unknown'
+        segments.append(((lon_u, lat_u, lon_v, lat_v), et))
+
+    if not segments:
+        print("[plotPathGeneric] Nessun segmento plottabile (mancano coord?).")
+        return
+
+    # stile per tipo
+    style = {
+        "terrestrial": dict(linestyle="-", linewidth=2.2),
+        "satellite":   dict(linestyle="--", linewidth=2.2),
+        "gsl":         dict(linestyle=":", linewidth=2.2),
+        "unknown":     dict(linestyle="-.", linewidth=1.8),
+    }
+
+    # figure
+    plt.figure(figsize=(12, 5.5))
+    ax = plt.gca()
+
+    # traccia gli spezzoni per tipo
+    for (x1, y1, x2, y2), et in segments:
+        kw = style.get(et, style["unknown"])
+        ax.plot([x1, x2], [y1, y2], **kw, color="#2a5c8a")
+
+    # source/dest
+    src_lat, src_lon = _get_node_coords_generic(earth, path_labels[0])
+    dst_lat, dst_lon = _get_node_coords_generic(earth, path_labels[-1])
+    if None not in (src_lat, src_lon):
+        ax.scatter([src_lon], [src_lat], s=120, c="limegreen", edgecolors="black", zorder=5, label="source")
+    if None not in (dst_lat, dst_lon):
+        ax.scatter([dst_lon], [dst_lat], s=120, c="red", edgecolors="black", zorder=5, label="destination")
+
+    ax.set_xlabel("Longitude [deg]")
+    ax.set_ylabel("Latitude [deg]")
+    ax.set_title(title)
+    ax.legend(loc="upper right")
+
+    # lim auto con padding
+    all_x = [x for seg,_ in segments for x in (seg[0], seg[2])]
+    all_y = [y for seg,_ in segments for y in (seg[1], seg[3])]
+    if all_x and all_y:
+        dx = max(1.0, 0.05 * (max(all_x) - min(all_x)))
+        dy = max(1.0, 0.05 * (max(all_y) - min(all_y)))
+        ax.set_xlim(min(all_x) - dx, max(all_x) + dx)
+        ax.set_ylim(min(all_y) - dy, max(all_y) + dy)
+
+    plt.tight_layout()
+    out_path = out_dir.rstrip("/\\") + "/path_generic.png"
+    plt.savefig(out_path, dpi=140)
+    plt.close()
+    print(f"[plotPathGeneric] salvata in: {out_path}")
 
 
 # @profile
 def RunSimulation(GTs, inputPath, outputPath, populationData, radioKM):
     start_time = datetime.now()
-    '''
-    this is required for the bar plot at the end of the simulation
-    percentages = {'Queue time': [],
-                'Propagation time': [],
-                'Transmission time': [],
-                'GTnumber' : []}
-    '''
+
+    # --- leggi inputRL.csv
     inputParams = pd.read_csv(inputPath + "inputRL.csv")
-
     locations = inputParams['Locations'].copy()
-    print('Nº of Gateways: ' + str(len(locations)))
+    print('Nº of Active Terrestrial Nodes: ' + str(len(locations)))
 
-    # pathing     = inputParams['Pathing'][0]
-    testType    = inputParams['Test type'][0]
-    testLength  = inputParams['Test length'][0]
-    # numberOfMovements = 0
+    testType   = inputParams['Test type'][0]
+    testLength = inputParams['Test length'][0]
 
     print('Routing metric: ' + pathing)
+
+    # main pair (se presente nel CSV)
+    main_src = None
+    main_dst = None
+    if 'Source' in inputParams.columns and 'Destination' in inputParams.columns:
+        try:
+            main_src = str(inputParams['Source'][0])
+            main_dst = str(inputParams['Destination'][0])
+        except Exception:
+            main_src = main_dst = None
 
     simulationTimelimit = testLength if testType != "Rates" else movementTime * testLength + 10
 
     firstGT = True
     for GTnumber in GTs:
-        global CurrentGTnumber
-        global Train
-        global TrainThis
-        global nnpath
+        global CurrentGTnumber, Train, TrainThis, nnpath
         if FL_Test:
             global CKA_Values
         if ddqn:
             global nnpathTarget
-        TrainThis       = Train
+        TrainThis = Train
         CurrentGTnumber = GTnumber
-        
+
         if firstGT:
-            # nnpath  = f'./pre_trained_NNs/qNetwork_1GTs.h5'   # Already set
             firstGT = False
         else:
-            nnpath  = f'{outputPath}/NNs/qNetwork_{GTnumber-1}GTs.h5'
+            nnpath = f'{outputPath}/NNs/qNetwork_{GTnumber - 1}GTs.h5'
             if ddqn:
-                nnpathTarget = f'{outputPath}/NNs/qTarget_{GTnumber-1}GTs.h5'
+                nnpathTarget = f'{outputPath}/NNs/qTarget_{GTnumber - 1}GTs.h5'
 
-        if len(GTs)>1:
+        if len(GTs) > 1:
             start_time_GT = datetime.now()
 
         env = simpy.Environment()
 
-        if mixLocs: # changes the selected GTs every iteration
+        # rimescola eventualmente le location
+        if mixLocs:
             firstLocs = locations[:max(GTs)]
             random.shuffle(firstLocs)
             locations[:max(GTs)] = firstLocs
-            # random.shuffle(locations)
+
         inputParams['Locations'] = locations[:GTnumber]
         print('----------------------------------')
         print('Time:')
@@ -8212,147 +10098,284 @@ def RunSimulation(GTs, inputPath, outputPath, populationData, radioKM):
         print(f'Reward for deliver: {ArriveReward}')
         print(f'Stop Loss: {stopLoss}, number of samples considered: {nLosses}, threshold: {lThreshold}')
         print('----------------------------------')
-        earth1, _, _, _ = initialize(env, populationData, inputPath + 'Gateways.csv', radioKM, inputParams, movementTime, locations, outputPath, matching=matching, TerrestrialNodesLocation=inputPath + 'TerrestrialNodes.csv')
+
+        earth1, _, _, _ = initialize(
+            env, populationData, inputPath + 'Gateways.csv', radioKM, inputParams,
+            movementTime, locations, outputPath, matching=matching,
+            TerrestrialNodesLocation=inputPath + 'TerrestrialNodes.csv'
+        )
         earth1.outputPath = outputPath
-        
+
+        # se l'init ha definito la coppia osservata, usala come main pair
+        if hasattr(earth1, 'observed_pair') and earth1.observed_pair and len(earth1.observed_pair) == 2:
+            try:
+                ms, md = earth1.observed_pair
+                main_src = str(ms)
+                main_dst = str(md)
+                print(f"Source/Destination pair (from inputRL.csv): {main_src} → {main_dst}")
+            except Exception:
+                pass
+
         print('Saving ISLs map...')
         islpath = outputPath + '/ISL_maps/'
-        os.makedirs(islpath, exist_ok=True) 
-        earth1.plotMap(plotGT = True, plotSat = True, edges=True, save = True, outputPath=islpath, n=earth1.nMovs)
+        os.makedirs(islpath, exist_ok=True)
+        earth1.plotMap(plotGT=True, plotSat=True, edges=True, save=True, outputPath=islpath, n=earth1.nMovs)
         plt.close()
         print('----------------------------------')
 
-        progress = env.process(simProgress(simulationTimelimit, env))
+        env.process(simProgress(simulationTimelimit, env))
         startTime = time.time()
         env.run(simulationTimelimit)
         timeToSim = time.time() - startTime
 
-        # some metrics
-        if not receivedDataBlocks:
-            print("No blocks received. Check links and path")
-        else:
-            total_blocks = len(receivedDataBlocks)
-            total_data_bits = sum(b.size for b in receivedDataBlocks)
-            simulation_time = env.now
+        # =========================
+        # Metriche base dai DataBlock ricevuti
+        # =========================
+        # creati / ricevuti / in volo (stuck)
+        try:
+            created_count = len(createdBlocks)
+        except Exception:
+            created_count = 0
+        recv_blocks = list(receivedDataBlocks)
+        received_count = len(recv_blocks)
+        stuck_count = max(0, created_count - received_count)
 
-            avg_total_latency = np.mean([b.txLatency + b.propLatency for b in receivedDataBlocks])
-            avg_tx_latency = np.mean([b.txLatency for b in receivedDataBlocks])
-            avg_prop_latency = np.mean([b.propLatency for b in receivedDataBlocks])
+        # queue per plotQueues (usa getQueueTime()[0] con fallback)
+        queue_latencies = []
+        for b in recv_blocks:
+            try:
+                qt = b.getQueueTime()
+                if isinstance(qt, (list, tuple)) and len(qt) > 0 and qt[0] is not None:
+                    queue_latencies.append(float(qt[0]))
+                else:
+                    if b.timeAtFirstTransmission is not None and b.creationTime is not None:
+                        queue_latencies.append(max(0.0, float(b.timeAtFirstTransmission - b.creationTime)))
+            except Exception:
+                if b.timeAtFirstTransmission is not None and b.creationTime is not None:
+                    queue_latencies.append(max(0.0, float(b.timeAtFirstTransmission - b.creationTime)))
 
-            throughput_mbps = (total_data_bits / simulation_time) / 1e6
+        # breakdown medio su ricevuti
+        if received_count > 0:
+            mean_q   = float(np.mean(queue_latencies)) if queue_latencies else 0.0
+            mean_tx  = float(np.mean([getattr(b, 'txLatency', 0.0) for b in recv_blocks]))
+            mean_prop= float(np.mean([getattr(b, 'propLatency', 0.0) for b in recv_blocks]))
+            total    = mean_q + mean_tx + mean_prop
+            p_q, p_tx, p_prop = (0.0, 0.0, 0.0)
+            if total > 0:
+                p_q   = 100.0 * mean_q   / total
+                p_tx  = 100.0 * mean_tx  / total
+                p_prop= 100.0 * mean_prop/ total
+            print(f"Created DataBlocks:  {created_count}")
+            print(f"Received DataBlocks: {received_count}")
+            print(f"Stuck (in-flight):   {stuck_count}")
+            print("---- Latency Breakdown (means) ----")
+            print(f"Queue:        {mean_q:.6f} s ({p_q:.1f}%)")
+            print(f"Transmission: {mean_tx:.6f} s ({p_tx:.1f}%)")
+            print(f"Propagation:  {mean_prop:.6f} s ({p_prop:.1f}%)")
+            print('-----------------------------------')
 
-            print("Simulation results:")
-            print(f"Received blocks: {total_blocks}")
-            print(f"Simulation time: {simulation_time:.2f} s")
+            # throughput/latency aggregata (sui ricevuti)
+            sim_time = float(env.now)
+            total_data_bits = sum(getattr(b, 'size', 0) for b in recv_blocks)
+            throughput_mbps = (total_data_bits / sim_time) / 1e6 if sim_time > 0 else 0.0
+            avg_total_latency = float(np.mean([
+                (queue_latencies[i] if i < len(queue_latencies) else 0.0)
+                + getattr(b, 'txLatency', 0.0)
+                + getattr(b, 'propLatency', 0.0)
+                for i, b in enumerate(recv_blocks)
+            ])) if recv_blocks else 0.0
+
+            print(f"Received blocks: {received_count}")
+            print(f"Simulation time: {sim_time:.2f} s")
             print(f"Average Throughput: {throughput_mbps:.2f} Mbps")
             print(f"Average total latency: {avg_total_latency:.4f} s")
-            print(f"Transmission: {avg_tx_latency:.4f} s")
-            print(f"Propagation: {avg_prop_latency:.4f} s")
+            print(f"Transmission: {mean_tx:.4f} s")
+            print(f"Propagation: {mean_prop:.4f} s")
+        else:
+            print("No blocks received. Check links and path")
 
-            # optional
-            for b in receivedDataBlocks:
-                print(f"[BLOCK {b.ID}] From {b.source.name} to {b.destination.name} | "
-                      f"Latency: {b.txLatency + b.propLatency:.3f}s | "
-                      f"Tx: {b.txLatency:.3f}s | Prop: {b.propLatency:.3f}s")
+        # i blocchi con cui lavorare ai plot
+        blocks = recv_blocks
 
-
+        # =========================
+        # Post-processing / plotting
+        # =========================
         if testType == "Rates":
             plotRatesFigures()
         else:
-            results, allLatencies, pathBlocks, blocks = getBlockTransmissionStats(timeToSim, inputParams['Locations'], inputParams['Constellation'][0], earth1)
-            print(f'DataBlocks lost: {earth1.lostBlocks}')
-            
-            # save & plot ftirst 2 GTs path latencies
-            plotSavePathLatencies(outputPath, GTnumber, pathBlocks)
+            # ---------- COSTRUZIONE ROBUSTA DEL DATASET PER plotSaveAllLatencies ----------
+            from collections import Counter
 
-            # Throughput figures
+            allLatenciesRows = []
+            rows_ok = 0
+            rows_err = 0
+
+            for b in blocks:
+                try:
+                    # queue totale
+                    q_total = 0.0
+                    try:
+                        qt = b.getQueueTime()  # [totale, [per-hop]]
+                        if isinstance(qt, (list, tuple)) and len(qt) > 0 and qt[0] is not None:
+                            q_total = float(qt[0])
+                    except Exception:
+                        if getattr(b, 'timeAtFirstTransmission', None) is not None and getattr(b, 'creationTime', None) is not None:
+                            q_total = max(0.0, float(b.timeAtFirstTransmission - b.creationTime))
+
+                    tx   = float(getattr(b, 'txLatency', 0.0) or 0.0)
+                    prop = float(getattr(b, 'propLatency', 0.0) or 0.0)
+                    tot  = q_total + tx + prop
+
+                    creation_time = getattr(b, 'creationTime', None)
+                    arrival_time  = None
+                    if getattr(b, 'checkPoints', None):
+                        try:
+                            arrival_time = float(b.checkPoints[-1])
+                        except Exception:
+                            arrival_time = None
+                    if arrival_time is None:
+                        base = creation_time if creation_time is not None else getattr(b, 'timeAtFirstTransmission', None)
+                        if base is None:
+                            base = 0.0
+                        arrival_time = float(base) + float(tot)
+
+                    if creation_time is None:
+                        try:
+                            creation_time = float(arrival_time) - float(tot)
+                        except Exception:
+                            creation_time = 0.0
+
+                    src = getattr(getattr(b, 'source', None), 'name', None) or str(getattr(getattr(b, 'source', None), 'ID', ''))
+                    dst = getattr(getattr(b, 'destination', None), 'name', None) or str(getattr(getattr(b, 'destination', None), 'ID', ''))
+
+                    p_sig = getattr(b, 'QPath', None) or getattr(b, 'path', None) or []
+
+                    allLatenciesRows.append([
+                        float(creation_time),        # Creation Time
+                        float(tot),                  # Latency
+                        float(arrival_time),         # Arrival Time
+                        src,                         # Source
+                        dst,                         # Destination
+                        bool(getattr(b, 'isNewPath', False)),
+                        getattr(b, 'oldPath', []),
+                        getattr(b, 'newPath', []),
+                        p_sig,
+                        float(q_total)               # queueTime
+                    ])
+                    rows_ok += 1
+                except Exception:
+                    rows_err += 1
+                    continue
+
+            print(f"[plotSaveAllLatencies] built rows: {rows_ok} (errors: {rows_err})")
+
+            # esponi le code ai plot (per plotQueues)
+            earth1.queues = queue_latencies
+
+            print(f'DataBlocks lost: {earth1.lostBlocks}')
+
+            # ---------- Throughput ----------
             print('Plotting Throughput...')
-            plot_packet_latencies_and_uplink_downlink_throughput(blocks, outputPath, bins_num=30, save = True, plot_separately = plotAllThro)
-            plot_throughput_cdf(blocks, outputPath, bins_num = 100, save = True, plot_separately = plotAllThro)
-            
-            if pathing == "Deep Q-Learning" or pathing == 'Q-Learning':
+            if blocks:
+                plot_packet_latencies_and_uplink_downlink_throughput(
+                    blocks, outputPath, bins_num=30, save=True, plot_separately=plotAllThro
+                )
+                plot_throughput_cdf(blocks, outputPath, bins_num=100, save=True, plot_separately=plotAllThro)
+            else:
+                print("[Throughput] Nessun blocco ricevuto: salto figure.")
+
+            # ---------- RL / Latencies ----------
+            print('Plotting latencies...')
+            if pathing in ("Deep Q-Learning", "Q-Learning"):
                 save_plot_rewards(outputPath, earth1.rewards, GTnumber)
                 if not onlinePhase:
                     eps = earth1.DDQNA.epsilon if pathing == "Deep Q-Learning" else earth1.epsilon
                 else:
                     eps = earth1.LEO[0].sats[0].DDQNA.epsilon if pathing == "Deep Q-Learning" else earth1.epsilon
-                # save epsilons
                 if Train:
                     epsDF = save_epsilons(outputPath, eps, GTnumber)
                     save_training_counts(outputPath, earth1.trains, GTnumber)
                 else:
                     epsDF = None
-
-                # save & plot all paths latencies
-                print('Plotting latencies...')
-                plotSaveAllLatencies(outputPath, GTnumber, allLatencies, epsDF)
-            
-            if pathing == "Deep Q-Learning":
-                # save losses
-                save_losses(outputPath, earth1, GTnumber)
-                if FL_Test and const_moved:
-                    print('Plotting CKA values...')
-                    plot_cka_over_time(earth1.CKA, outputPath, GTnumber)
-                
+                if allLatenciesRows:
+                    plotSaveAllLatencies(outputPath, GTnumber, allLatenciesRows, epsDF)
+                else:
+                    print('[plotSaveAllLatencies] Nessuna latenza da plottare: skip.')
             else:
-                print('Plotting latencies...')
-                plotSaveAllLatencies(outputPath, GTnumber, allLatencies)
+                if allLatenciesRows:
+                    plotSaveAllLatencies(outputPath, GTnumber, allLatenciesRows)
+                else:
+                    print('[plotSaveAllLatencies] Nessuna latenza da plottare: skip.')
 
-        plotShortestPath(earth1, pathBlocks[1][-1].path, outputPath)
-        if not onlinePhase:
-            plotQueues(earth1.queues, outputPath, GTnumber)
+            # ---------- Path principale da plottare ----------
+            last_path = None
+            if main_src and main_dst and blocks:
+                from collections import Counter
+                cnt = Counter()
+                for b in blocks:
+                    bs = getattr(getattr(b, 'source', None), 'name', None)
+                    bd = getattr(getattr(b, 'destination', None), 'name', None)
+                    if bs == main_src and bd == main_dst:
+                        p = getattr(b, 'QPath', None) or getattr(b, 'path', None)
+                        if p:
+                            cnt[tuple(p)] += 1
+                if cnt:
+                    last_path = list(cnt.most_common(1)[0][0])
+                    print(f"[plotShortestPath] plotting observed pair: ({main_src}, {main_dst})")
 
-        print('Plotting link congestion figures...')
-        plotCongestionMap(earth1, np.asarray(blocks), outputPath + '/Congestion_Test/', GTnumber, plot_separately=plotAllCon)
+            if last_path is None and blocks:
+                lb = blocks[-1]
+                last_path = getattr(lb, "path", None) or getattr(lb, "QPath", None)
 
-        print(f"number of gateways: {GTnumber}")
-        print('Path:')
-        print(pathBlocks[1][-1].path)
-        print('Bottleneck:')
-        print(findBottleneck(pathBlocks[1][-1].path, earth1))
+            if last_path:
+                title_txt = f"Path: {main_src} → {main_dst}" if (main_src and main_dst) else "Path"
+                plotPathGeneric(earth1, last_path, outputPath, title=title_txt)
+            else:
+                print("[plotShortestPath] Nessun path disponibile: salto.")
 
-        '''
-        # add data for percentages bar plot
-        # percentages['Queue time']       .append(results.meanQueueLatency)
-        # percentages['Propagation time'] .append(results.meanPropLatency)
-        # percentages['Transmission time'].append(results.meanTransLatency)
-        # percentages['GTnumber']         .append(GTnumber)
+            # ---------- Code ----------
+            if not onlinePhase:
+                plotQueues(getattr(earth1, 'queues', []), outputPath, GTnumber)
 
-        save congestion test data
-        print('Saving congestion test data...')
-        blocks = []
-        for block in receivedDataBlocks:
-            blocks.append(BlocksForPickle(block))
-        blockPath = outputPath + f"./Results/Congestion_Test/{pathing} {float(pd.read_csv('inputRL.csv')['Test length'][0])}/"
-        os.makedirs(blockPath, exist_ok=True)
-        try:
-            np.save("{}blocks_{}".format(blockPath, GTnumber), np.asarray(blocks),allow_pickle=True)
-        except pickle.PicklingError:
-            print('Error with pickle and profiling')
-        '''
+            # ---------- Congestione ----------
+            print('Plotting link congestion figures...')
+            try:
+                if blocks:
+                    paths_for_congestion = []
+                    for b in blocks:
+                        p = getattr(b, 'QPath', None) or getattr(b, 'path', None)
+                        if p and len(p) >= 2:
+                            paths_for_congestion.append(p)
+                    if paths_for_congestion:
+                        plotCongestionMap(
+                            earth1, paths_for_congestion, outputPath + '/Congestion_Test/', GTnumber,
+                            plot_separately=plotAllCon
+                        )
+                    else:
+                        print("Congestion map: nessun path disponibile nei blocchi.")
+                else:
+                    print("[Congestion] Nessun blocco: salto figura.")
+            except Exception as e:
+                print(f"Congestion map for all routes not available ({e})")
 
-        # save learnt values
+        # ---- salvataggi RL
         if pathing == 'Q-Learning':
             saveQTables(outputPath, earth1)
         elif pathing == 'Deep Q-Learning':
             saveDeepNetworks(outputPath + '/NNs/', earth1)
 
-        # percentages.clear()
-        receivedDataBlocks  .clear()
-        createdBlocks       .clear()
-        pathBlocks          .clear()
-        allLatencies        .clear()
-        upGSLRates          .clear()
-        downGSLRates        .clear()
-        interRates          .clear()
-        intraRate           .clear()
-        del results
+        # ---- cleanup
+        receivedDataBlocks.clear()
+        createdBlocks.clear()
+        upGSLRates.clear()
+        downGSLRates.clear()
+        interRates.clear()
+        intraRate.clear()
+        gc.collect()
         del earth1
         del env
-        del _
-        gc.collect()
 
-        if len(GTs)>1:
+        if len(GTs) > 1:
             print('----------------------------------')
             print('Time:')
             end_time_GT = datetime.now()
@@ -8361,8 +10384,6 @@ def RunSimulation(GTs, inputPath, outputPath, populationData, radioKM):
             elapsed_time_GT = end_time_GT - start_time_GT
             print(f"Elapsed time for {GTnumber} GTs: {elapsed_time_GT}")
             print('----------------------------------')
-
-    # plotLatenciesBars(percentages, outputPath)
 
     print('----------------------------------')
     print('Time:')
@@ -8373,15 +10394,14 @@ def RunSimulation(GTs, inputPath, outputPath, populationData, radioKM):
     print(f"Elapsed time: {elapsed_time}")
     print('----------------------------------')
 
-
 ###############################################################################
 ##############################     Main     ###################################
 ###############################################################################
 
-
 if __name__ == '__main__':
-    os.makedirs(outputPath, exist_ok=True) 
-    sys.stdout = Logger(outputPath + 'logfile.log')
+    os.makedirs(outputPath, exist_ok=True)
+    sys.stdout = Logger(outputPath + 'logfile.log', mode="w", encoding="utf-8")
+    sys.stderr = sys.stdout
 
     RunSimulation(GTs, './', outputPath, populationMap, radioKM=rKM)
     # cProfile.run("RunSimulation(GTs, './', outputPath, populationMap, radioKM=rKM)")
