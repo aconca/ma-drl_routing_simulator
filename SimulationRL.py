@@ -393,6 +393,149 @@ def simProgress(simTimelimit, env):
         yield env.timeout(timeStepSize)
         progress += 1
 
+###############################################################################
+################################## Helper #####################################
+###############################################################################
+def _k(x):
+    """Chiave hashable/leggibile per nodi (stringa per City/Gateway, ID per satelliti)."""
+    if x is None:
+        return None
+    # oggetti con attributo name
+    n = getattr(x, "name", None)
+    if n is not None:
+        return str(n)
+    # oggetti con attributo ID (satelliti)
+    i = getattr(x, "ID", None)
+    if i is not None:
+        return str(i)
+    # già una chiave
+    return str(x)
+
+def coerce_path_to_keys(path):
+    """Restituisce la path come lista di chiavi (stringhe) senza None."""
+    if not path:
+        return []
+    out = []
+    for p in path:
+        if isinstance(p, (list, tuple)) and len(p) >= 1:
+            out.append(_k(p[0]))
+        else:
+            out.append(_k(p))
+    return out
+
+def _edge_attrs_any_graph(earth, u, v):
+    """
+    Cerca l'arco u-v prima nel grafo terrestre, poi nello spazio.
+    Restituisce (attrs, 'TERR'|'SPACE') oppure (None, None) se non trovato.
+    """
+    Gt = getattr(earth, "terrestrialGraph", None)
+    Gs = getattr(earth, "graph", None)  # space graph dal tuo createGraph
+    if Gt is not None and Gt.has_edge(u, v):
+        return (Gt.get_edge_data(u, v) or {}), "TERR"
+    if Gs is not None and Gs.has_edge(u, v):
+        return (Gs.get_edge_data(u, v) or {}), "SPACE"
+    return None, None
+
+def edge_latency_and_rate(earth, u, v):
+    """
+    Ritorna (propDelay_seconds, dataRate_bps, etype) per l’arco u->v.
+    - Terrestre: usa edge['propDelay'] se presente, altrimenti calcola da length_km (5us/km).
+    - Spazio:     usa edge['slant_range'] (m) => prop ~ dist / c (c≈3e8), o edge['propDelay'] se presente.
+    - Data rate:  prova 'dataRate' o 'dataRateOG'; fallback None (così ce ne accorgiamo).
+    """
+    ed, where = _edge_attrs_any_graph(earth, str(u), str(v))
+    if ed is None:
+        return None, None, None
+
+    etype = ed.get("type", None)
+
+    # ---- propagation ----
+    prop = ed.get("propDelay", None)
+    if prop is None:
+        if where == "TERR":
+            # se ho length_km uso 5 microsec/km. Altrimenti None (ma in genere propDelay c'è).
+            length_km = ed.get("length_km", None)
+            if length_km is not None:
+                prop = float(length_km) * 5e-6
+        else:
+            # SPACE: preferisci slant_range (metri)
+            sr = ed.get("slant_range", None)
+            if sr is not None:
+                c = 299792458.0
+                prop = float(sr) / c
+    # come extrema-ratio, 0.0 (meglio di None)
+    if prop is None:
+        prop = 0.0
+
+    # ---- rate ----
+    rate = ed.get("dataRate", None)
+    if rate is None:
+        # in createGraph usi invDataRate per GSL e dataRate=1/shannon per ISL.
+        # Se trovi 'invDataRate', non “invertire”: vogliamo il *vero* rate; prova 'dataRateOG'
+        rate = ed.get("dataRateOG", None)
+
+    return prop, rate, etype
+
+def debug_dump_path_edges(earth, path_keys, label=""):
+    """
+    Stampa ogni hop con type, rate e propDelay (calcolata).
+    Utile per vedere se mancano attributi o se c'è un salto strano.
+    """
+    print("=== debug_dump_path_edges ===")
+    for a, b in zip(path_keys[:-1], path_keys[1:]):
+        ed, where = _edge_attrs_any_graph(earth, a, b)
+        if ed is None:
+            print(f"[MISSING] {a} -> {b} | (edge not found in terr/space)")
+            continue
+        etype = ed.get("type", "?")
+        dr = ed.get("dataRate", ed.get("dataRateOG", None))
+        prop = ed.get("propDelay", None)
+        # se prop mancante, ricalcola come in edge_latency_and_rate (solo display)
+        if prop is None:
+            prop2, _, _ = edge_latency_and_rate(earth, a, b)
+            prop = prop2
+        print(f"[{where}:{etype}] {a} -> {b} | rate={dr} prop={prop}")
+
+def estimate_path_cost_verbose(earth, path, kind="PATH", block_size_bits=None):
+    """
+    Somma TX+PROP hop-by-hop e stampa una tabella leggibile.
+    Ritorna (total_prop, total_tx, total_cost) dove total_cost=prop+tx.
+    """
+    if block_size_bits is None:
+        block_size_bits = BLOCK_SIZE
+
+    p = coerce_path_to_keys(path)
+    if len(p) < 2:
+        print(f"[{kind}] path vuota/mononodo: {p}")
+        return float("inf"), float("inf"), float("inf")
+
+    print(f"\n[cost-verbose] {p[0]} -> {p[-1]}")
+    debug_dump_path_edges(earth, p, label=kind)
+
+    tot_prop = 0.0
+    tot_tx = 0.0
+    for a, b in zip(p[:-1], p[1:]):
+        prop, rate, etype = edge_latency_and_rate(earth, a, b)
+        if rate is None or rate <= 0:
+            print(f"[WARN] Rate mancante/sballato su {a} -> {b} (etype={etype})")
+            tx = float("inf")
+        else:
+            tx = block_size_bits / float(rate)
+
+        if prop is None:
+            prop = 0.0
+
+        # stampa compatibile con i log che usavi:
+        kind_str = "TERR" if etype and etype in ("normal", "seacable", "gateway_backhaul") else (etype or "EDGE")
+        print(f"[cost-verbose] {kind_str:4}  {a} -> {b}  rate={rate: .2e}  prop={prop:.6f}  tx={tx:.6f}")
+
+        tot_prop += prop
+        tot_tx += (0.0 if not (rate and rate > 0) else tx)
+
+    tot = tot_prop + tot_tx
+    print(f"[cost-verbose] TOTAL = {tot:.6f}s\n")
+    return tot_prop, tot_tx, tot
+
 
 ###############################################################################
 ############################# Federated Learning ##############################
@@ -5342,9 +5485,9 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     print("Graph built.")
 
     # check: archi gateway_backhaul devono avere dataRate
-    miss = [(u, v) for u, v, ed in G.edges(data=True)
-            if ed.get("type") == "gateway_backhaul" and ed.get("dataRate") in (None, 0)]
-    print(">>> Controllo completato. Mancanti:", len(miss))
+    # miss = [(u, v) for u, v, ed in G.edges(data=True)
+    #         if ed.get("type") == "gateway_backhaul" and ed.get("dataRate") in (None, 0)]
+    # print(">>> Controllo completato. Mancanti:", len(miss))
 
     # ---------------------------
     # 2) Parametri simulazione
@@ -5512,7 +5655,7 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     nodes_with_users = [n for n in city_nodes_objs if getattr(n, 'connectedUsers', None)]
     requested_nodes = [name2node[nm] for nm in whitelist if nm in name2node]
 
-    N_ACTIVE = 4
+    N_ACTIVE = 2
     active_terrestrial = requested_nodes if requested_nodes else nodes_with_users[:min(N_ACTIVE, len(nodes_with_users))]
     earth.active_terrestrial_nodes = active_terrestrial
     active_set = set(active_terrestrial)
@@ -8255,6 +8398,14 @@ def RunSimulation(GTs, inputPath, outputPath, populationData, radioKM):
                       f"Latency: {b.txLatency + b.propLatency:.3f}s | "
                       f"Tx: {b.txLatency:.3f}s | Prop: {b.propLatency:.3f}s")
 
+        try:
+            pkeys = coerce_path_to_keys(block.path)
+            if pkeys and len(pkeys) > 1:
+                print("   PATH:", " -> ".join(pkeys))
+                # opzionale: breakdown TX/PROP per hop (metti un if per non spammare)
+                # estimate_path_cost_verbose(earth1, block.path, kind="TERR")
+        except Exception as e:
+            print("[DEBUG] Impossibile stampare path per questo block:", e)
 
         if testType == "Rates":
             plotRatesFigures()

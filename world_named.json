@@ -28835,7 +28835,7 @@
 26.34
 ],
 "type":"City",
-"name":"Okinawa",
+"name":"Okinawa Node",
 "id":618
 },
 {
@@ -31310,7 +31310,7 @@
 57.05
 ],
 "type":"City",
-"name":"Aalborg",
+"name":"Aalborg Node",
 "id":339
 },
 {
@@ -32822,7 +32822,7 @@
 -53.15
 ],
 "type":"City",
-"name":"Punta Arenas",
+"name":"Punta Arenas Node",
 "id":171
 },
 {

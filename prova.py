@@ -24,13 +24,15 @@ import builtins
 import topohub
 import json
 import unicodedata as _ud
+import re
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 from matplotlib.path import Path
 from matplotlib.patches import FancyArrowPatch
 from matplotlib.colors import Normalize
-import matplotlib.cm as cm
+import matplotlib.image as mpimg
+from matplotlib import cm
 
 from geopy.distance import geodesic
 from collections import Counter
@@ -745,22 +747,10 @@ def plot_cka_over_time(cka_data, outputPath, nGTs):
         np.savetxt(os.path.join(path, f'cka_matrix_before_{i}.csv'), entry[0], delimiter=',')
         np.savetxt(os.path.join(path, f'cka_matrix_after_{i}.csv'), entry[1], delimiter=',')
 
-#----------------------------------------------------------------------------
-# --- PATH NORMALIZATION UTILS ----------------------------------------------
-#----------------------------------------------------------------------------
-
-import unicodedata as _ud
-import re
-
-import unicodedata as _ud
-import re
-
-import math
-import networkx as nx
-
-C = 299_792_458.0  # m/s
-
 # ==== HELPERS PER CHIAVI/PERCORSI ===========================================
+
+def _step_key(step):
+    return step[0] if isinstance(step, (tuple, list)) else step
 
 def coerce_key(k):
     """Normalizza una voce di path in una 'chiave' confrontabile:
@@ -849,8 +839,20 @@ def edge_cost_from_graph(earth, u_key, v_key, block_size_bits=None, verbose=Fals
         if raw is None:
             raw = ed.get("dataRate", None)
 
-        # propagation dallo slant range
-        sl_km = ed.get("slant_range", 0.0) or 0.0
+        # propagation dallo slant range: l'arco può riportare metri o chilometri
+        sl_raw = ed.get("slant_range")
+        if sl_raw is None:
+            sl_raw = ed.get("slant_range_km")
+
+        if sl_raw is None:
+            sr_m = ed.get("slant_range_m")
+            sl_km = (sr_m / 1000.0) if sr_m else 0.0
+        else:
+            # se il valore sembra essere in metri (es. >1e5), converti
+            sl_km = float(sl_raw)
+            if sl_km > 1e5:
+                sl_km /= 1000.0
+
         C_VAC = 299_792.458  # km/s
         prop = (sl_km / C_VAC) if sl_km else 0.0
 
@@ -1938,17 +1940,26 @@ class Satellite:
             path = block.path  # if there is no Q-Learning we will work with the path as normally
 
         # get this satellites index in the blocks path
+
+
         index = None
         for i, step in enumerate(path):
-            if self.ID == step[0]:
+            if self.ID == _step_key(step):
                 index = i
+                break
 
-        if not index:
-            print(path)
+        if index is None:
+            #print(f"Satellite {self.ID} not in block path {path}")
+            return
+
+        nxt = path[index + 1]
+        nxt_id = nxt[0] if isinstance(nxt, (list, tuple)) else nxt
 
         # check if next step in path is GT (last step in path)
-        if index == len(path) - 2:
-            # add block to GT send-buffer
+        earth = self.orbPlane.earth
+        next_id = _step_key(path[index + 1])
+
+        if next_id in getattr(earth, 'node_by_name', {}):
             if not self.sendBufferGT[0][0].triggered:
                 self.sendBufferGT[0][0].succeed()
                 self.sendBufferGT[1].append(block)
@@ -1956,20 +1967,19 @@ class Satellite:
                 newEvent = self.env.event().succeed()
                 self.sendBufferGT[0].append(newEvent)
                 self.sendBufferGT[1].append(block)
-
         else:
             ID = None
             isIntra = False
-            # get ID of next sat
             for sat in self.intraSats:
-                id = sat[1].ID
-                if id == path[index + 1][0]:
+                if sat[1].ID == next_id:
                     ID = sat[1].ID
                     isIntra = True
-            for sat in self.interSats:
-                id = sat[1].ID
-                if id == path[index + 1][0]:
-                    ID = sat[1].ID
+                    break
+            if ID is None:
+                for sat in self.interSats:
+                    if sat[1].ID == next_id:
+                        ID = sat[1].ID
+                        break
 
             if ID is not None:
                 sendBuffer = None
@@ -1996,9 +2006,7 @@ class Satellite:
                     sendBuffer[1].append(block)
 
             else:
-                print(
-                    "ERROR! Sat {} tried to send block to {} but did not have it in its linked satellite list".format(
-                        self.ID, path[index + 1][0]))
+                print("ERROR! Sat {} tried to send block to {} but did not have it in its linked satellite list".format(self.ID, next_id))
 
     def sendBlock(self, destination, isSat, isIntra=None):
         """
@@ -2420,7 +2428,10 @@ class TerrestrialNode:
         if isinstance(key, int):     # satellite
             return earth.sat_by_id.get(key, None)
         if isinstance(key, str):     # terrestrial/gateway
-            return earth.node_by_name.get(key, None)
+            node = earth.sat_by_id.get(str(key))
+            if node is None:
+                node = earth.node_by_name.get(key)
+            return node
         return None
 
     def _drop_head_from_sendbuffer(self):
@@ -2798,6 +2809,14 @@ class TerrestrialNode:
         unavailableDestinationBuffer = []
         while True:
             try:
+                graph = getattr(self, 'graph', None)
+                src_keys = [getattr(self, 'name', None), getattr(self, 'ID', None)]
+                dst_keys = [getattr(destination, 'name', None), getattr(destination, 'ID', None)]
+                src_ok = graph is not None and any(k is not None and graph.has_node(k) for k in src_keys)
+                dst_ok = graph is not None and any(k is not None and graph.has_node(k) for k in dst_keys)
+                if not (src_ok and dst_ok):
+                    print(f"Cannot create DataBlock: source {getattr(self, 'name', self)} or destination {getattr(destination, 'name', destination)} not in graph")
+                    return
                 block = DataBlock(self, destination, f"{self.ID}_{destination.ID}_{index}", self.env.now)
                 timeToFull = self.timeToFullBlock(block)
                 yield self.env.timeout(timeToFull)
@@ -2814,7 +2833,7 @@ class TerrestrialNode:
                         self.sendBuffer[1].append(unavailableDestinationBuffer.pop(0))
 
                     # assegna path al blocco
-                    block.path = coerce_path_only(self.paths.get(destination.name))
+                    block.path = self.paths[destination.name]
                     if self.earth.pathParam in ['Q-Learning', 'Deep Q-Learning']:
                         block.QPath = [block.path[0], block.path[1], block.path[-1]]
 
@@ -2860,10 +2879,11 @@ class TerrestrialNode:
             p = coerce_path_to_keys(getattr(block, "path", None))
             if not p or len(p) < 2:
                 try:
+                    path_log = coerce_path_only(list(getattr(block, 'path', [])))
                     safe_print("[ERROR] Invalid/missing path from {} to {}: {}".format(
                         self.name,
                         getattr(getattr(block, 'destination', None), 'name', '?'),
-                        getattr(block, 'path', None)
+                        path_log
                     ))
                 except Exception:
                     print("[ERROR] Invalid/missing path.")
@@ -3173,6 +3193,14 @@ class Gateway:
 
         while True:
             try:
+                graph = getattr(self, 'graph', None)
+                src_keys = [getattr(self, 'name', None), getattr(self, 'ID', None)]
+                dst_keys = [getattr(destination, 'name', None), getattr(destination, 'ID', None)]
+                src_ok = graph is not None and any(k is not None and graph.has_node(k) for k in src_keys)
+                dst_ok = graph is not None and any(k is not None and graph.has_node(k) for k in dst_keys)
+                if not (src_ok and dst_ok):
+                    print(f"Cannot create DataBlock: source {getattr(self, 'name', self)} or destination {getattr(destination, 'name', destination)} not in graph")
+                    return
                 # create a new block to be filled
                 block = DataBlock(self, destination, str(self.ID) + "_" + str(destination.ID) + "_" + str(index),
                                   self.env.now)
@@ -5488,12 +5516,6 @@ class Earth:
     def plotMap(self, plotGT=True, plotSat=True, path=None, bottleneck=None,
                 save=False, ID=None, time=None, edges=False, arrow_gap=0.008,
                 outputPath='', paths=None, fileName="map.png", n=None):
-        import numpy as np
-        import matplotlib.pyplot as plt
-        from matplotlib import cm
-        from matplotlib.colors import Normalize, LogNorm
-        from matplotlib.path import Path
-        from matplotlib.patches import FancyArrowPatch
 
         # figure
         if paths is None:
@@ -5653,6 +5675,17 @@ class Earth:
         scat1 = None
         scat2 = None
 
+        norm_path = _normalize_path_for_plot(path) if path else []
+        path_gates = set()
+        if norm_path:
+            for hop in norm_path:
+                try:
+                    node = self.getNodeByName(hop[0])
+                    if isinstance(node, Gateway):
+                        path_gates.add(str(node.name))
+                except Exception:
+                    continue
+
         if plotSat:
             colors = cm.rainbow(np.linspace(0, 1, len(self.LEO))) if len(self.LEO) > 0 else [(0, 0, 0, 1)]
             plotSatID = globals().get('plotSatID', False)
@@ -5666,13 +5699,18 @@ class Earth:
                         plt.text(gridSatX + 10, gridSatY - 10, str(sat.ID), fontsize=6, ha='left', va='center')
 
         if plotGT:
-            for GT in getattr(self, "gateways", []):
-                scat1 = plt.scatter(GT.gridLocationX, GT.gridLocationY,
-                                    marker='x', c='r', s=28, linewidth=1.5, label=str(GT.name))
+            if path_gates:
+                for GT in getattr(self, "gateways", []):
+                    if str(GT.name) in path_gates:
+                        scat1 = plt.scatter(GT.gridLocationX, GT.gridLocationY,
+                                            marker='x', c='r', s=28, linewidth=1.5, label=str(GT.name))
+            else:
+                for GT in getattr(self, "gateways", []):
+                    scat1 = plt.scatter(GT.gridLocationX, GT.gridLocationY,
+                                        marker='x', c='r', s=28, linewidth=1.5, label=str(GT.name))
 
         # --- disegna path se fornito (robusto a liste di nomi) -------------------
         if path:
-            norm_path = _normalize_path_for_plot(path)
             if len(norm_path) >= 2:
                 if bottleneck:
                     xValues = [[], [], []]
@@ -5706,6 +5744,22 @@ class Earth:
                     xValues = [int((0.5 + hop[1] / 360.0) * 1440) for hop in norm_path]
                     yValues = [int((0.5 - hop[2] / 180.0) * 720) for hop in norm_path]
                     plt.plot(xValues, yValues)
+                for i, hop in enumerate(norm_path):
+                    px = int((0.5 + hop[1] / 360.0) * 1440)
+                    py = int((0.5 - hop[2] / 180.0) * 720)
+                    name = hop[0]
+                    if i == 0:
+                        plt.scatter(px, py, marker='s', c='g', s=60, linewidth=1.5, edgecolors='black', zorder=5)
+                        plt.text(px + 10, py - 10, name, fontsize=6, ha='left', va='center', color='green')
+                    elif i == len(norm_path) - 1:
+                        plt.scatter(px, py, marker='*', c='purple', s=80, linewidth=1.5, edgecolors='black', zorder=5)
+                        plt.text(px + 10, py - 10, name, fontsize=6, ha='left', va='center', color='purple')
+                    elif name in path_gates:
+                        plt.scatter(px, py, marker='x', c='r', s=60, linewidth=1.5, zorder=5)
+                        plt.text(px + 10, py - 10, name, fontsize=6, ha='left', va='center', color='red')
+                    else:
+                        plt.scatter(px, py, marker='o', c='yellow', s=40, linewidth=1.0, edgecolors='black', zorder=5)
+                        plt.text(px + 10, py - 10, name, fontsize=6, ha='left', va='center')
             else:
                 print("[plotMap] Path fornito ma vuoto o con un solo hop dopo la normalizzazione: skip path plot.")
 
@@ -6718,19 +6772,19 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
 
     # ---------------------------
     # Diagnostica rapida
-    print(f"[TERR] nodes: {G.number_of_nodes()}  edges: {G.number_of_edges()}")
-    from collections import Counter
-    terr_node_types = Counter(nx.get_node_attributes(G, 'type').values())
-    terr_edge_types = Counter(nx.get_edge_attributes(G, 'type').values())
-    print("[TERR] node types:", terr_node_types)
-    print("[TERR] edge  types:", terr_edge_types)
-
-    print(f"[SPACE] nodes: {spaceG.number_of_nodes()}  edges: {spaceG.number_of_edges()}")
-    space_node_types = Counter(nx.get_node_attributes(spaceG, 'type').values())
-    space_edge_types = Counter(nx.get_edge_attributes(spaceG, 'type').values())
-    print("[SPACE] node types:", space_node_types)
-    print("[SPACE] edge  types:", space_edge_types)
-    print('----------------------------------')
+    # print(f"[TERR] nodes: {G.number_of_nodes()}  edges: {G.number_of_edges()}")
+    # from collections import Counter
+    # terr_node_types = Counter(nx.get_node_attributes(G, 'type').values())
+    # terr_edge_types = Counter(nx.get_edge_attributes(G, 'type').values())
+    # print("[TERR] node types:", terr_node_types)
+    # print("[TERR] edge  types:", terr_edge_types)
+    #
+    # print(f"[SPACE] nodes: {spaceG.number_of_nodes()}  edges: {spaceG.number_of_edges()}")
+    # space_node_types = Counter(nx.get_node_attributes(spaceG, 'type').values())
+    # space_edge_types = Counter(nx.get_edge_attributes(spaceG, 'type').values())
+    # print("[SPACE] node types:", space_node_types)
+    # print("[SPACE] edge  types:", space_edge_types)
+    # print('----------------------------------')
 
     # =====================================================================
     # 7) inputRL.csv: riga1=SOURCE, riga2=DEST, resto=City attive
@@ -6779,8 +6833,7 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     for n in earth.terrestrial_nodes:
         n.totalLocations = [m for m in active_terrestrial if m is not n] if (n in active_set) else []
 
-    # ---- copertura+flow gateway-style per gli attivi
-    MAX_COVERAGE_KM = 25
+    MAX_COVERAGE_KM = 30
     DIST_FUNC = "Step"
     FRACTION  = float(fraction)
     try:
@@ -6788,7 +6841,7 @@ def initialize(env, popMapLocation, GTLocation, distance, inputParams, movementT
     except NameError:
         AVG_FLOW_PER_USER = 20e6
 
-    print("Traffic generated per Active Terrestrial Nodes (totalAvgFlow per Milliard):")
+    print("Traffic generated per Active Terrestrial Node (totalAvgFlow per Milliard):")
     print('----------------------------------')
     for n in earth.active_terrestrial_nodes:
         n.setup_coverage_and_flow(
@@ -7072,81 +7125,6 @@ def pick_nearest_gateway(city_name, earth, top_k=5):
     rows.sort(key=lambda x: x[0])
     return rows[:top_k]  # lista di tuple (dist, gt, terr_key, space_key)
 
-def compute_hybrid_path(src_city, dst_city, earth, try_k=3):
-    """Costruisce un path ibrido completo. Ritorna lista di chiavi (mix terr/spazio)."""
-    Gt = earth.terr_graph
-    Gs = earth.space_graph
-
-    # candidati GW più vicini
-    src_cands = pick_nearest_gateway(src_city, earth, top_k=max(1, try_k))
-    dst_cands = pick_nearest_gateway(dst_city, earth, top_k=max(1, try_k))
-
-    # prova combinazioni (srcGW, dstGW)
-    for _, gwS, terrS, spaceS in src_cands:
-        # trova sat_src (primo vicino type=GSL)
-        sat_src = None
-        if spaceS in Gs:
-            for n in Gs.neighbors(spaceS):
-                ed = Gs.get_edge_data(spaceS, n)
-                if ed and ed.get('type') == 'GSL':
-                    sat_src = n
-                    break
-        if sat_src is None:
-            continue
-
-        for _, gwD, terrD, spaceD in dst_cands:
-            # sat_dst
-            sat_dst = None
-            if spaceD in Gs:
-                for n in Gs.neighbors(spaceD):
-                    ed = Gs.get_edge_data(spaceD, n)
-                    if ed and ed.get('type') == 'GSL':
-                        sat_dst = n
-                        break
-            if sat_dst is None:
-                continue
-
-            # tratta terrestre src → GW_src(terr)
-            try:
-                p1 = nx.shortest_path(Gt, src_city, terrS, weight='weight')
-            except Exception:
-                continue
-
-            # tratta spaziale: spaceS→sat_src (è un arco GSL, non serve shortest) + sat_src … sat_dst + sat_dst→spaceD
-            if not (spaceS in Gs and sat_src in Gs and Gs.has_edge(spaceS, sat_src)):
-                continue
-            try:
-                p_space = nx.shortest_path(Gs, sat_src, sat_dst, weight='slant_range')
-            except Exception:
-                continue
-            if not (spaceD in Gs and sat_dst in Gs and Gs.has_edge(sat_dst, spaceD)):
-                continue
-
-            # tratta terrestre GW_dst(terr) → dst
-            try:
-                p2 = nx.shortest_path(Gt, terrD, dst_city, weight='weight')
-            except Exception:
-                continue
-
-            # raccordo coerente
-            path = []
-            path += p1  # … src … terrS
-            if spaceS != terrS:
-                path.append(spaceS)     # “giunzione” al nodo GW dello space-graph
-            path.append(sat_src)
-            # catena ISL
-            if len(p_space) > 1:
-                path += p_space[1:]    # evita duplicare sat_src
-            path.append(spaceD)        # GSL down su GW_dst nello space-graph
-            if spaceD != terrD:
-                path.append(terrD)     # “giunzione” verso GW_dst nel grafo terrestre
-            if len(p2) > 1:
-                path += p2[1:]         # … terrD … dst
-
-            return path
-
-    # nessuna combinazione valida
-    return None
 
 def choose_best_path(src_name, dst_name, earth, k=3):
     """Confronta terrestre e ibrido. Restituisce (best_path, best_cost, best_kind)."""
@@ -7725,9 +7703,16 @@ def establishRemainingISLs(earth, g):
     # Establish links from closest to farthest in terms of horizontal alignment
     for lat_diff, sat_r, sat_l, distance in potential_links:
         if sat_r.right is None and sat_l.left is None:
-            g.add_edge(sat_r.ID, sat_l.ID, slant_range=distance,
-                       dataRate=1 / shannonRate[Satellites.index(sat_r), Satellites.index(sat_l)],
-                       dataRateOG=shannonRate[Satellites.index(sat_r), Satellites.index(sat_l)], hop=1, type='ISL')
+            # ``distance`` is given in meters → store kilometres on the edge
+            g.add_edge(
+                sat_r.ID,
+                sat_l.ID,
+                slant_range=distance / 1000.0,
+                dataRate=1 / shannonRate[Satellites.index(sat_r), Satellites.index(sat_l)],
+                dataRateOG=shannonRate[Satellites.index(sat_r), Satellites.index(sat_l)],
+                hop=1,
+                type='ISL',
+            )
             sat_r.right = sat_l
             sat_l.left = sat_r
             # print(f"Established horizontal link between {sat_r.ID} (right) and {sat_l.ID} (left) with latitude difference {lat_diff:.2f} deg and distance: {distance/1000:.2F} km.")
@@ -7756,12 +7741,16 @@ def createGraph(earth, matching='Greedy'):
     for GT in earth.gateways:
         if GT.linkedSat[1]:
             g.add_node(GT.name, GT=GT)  # add GT as node
-            g.add_edge(GT.name, GT.linkedSat[1].ID,  # add GT linked sat as edge
-                       slant_range=GT.linkedSat[0],  # slant range
-                       invDataRate=1 / GT.dataRate,  # Inverse of dataRate
-                       dataRateOG=GT.dataRate,  # original shannon dataRate
-                       hop=1,
-                       type='GSL')  # in case we just want to count hops
+            # ``GT.linkedSat[0]`` is provided in meters → store kilometres
+            g.add_edge(
+                GT.name,
+                GT.linkedSat[1].ID,  # add GT linked sat as edge
+                slant_range=GT.linkedSat[0] / 1000.0,  # slant range in km
+                invDataRate=1 / GT.dataRate,  # Inverse of dataRate
+                dataRateOG=GT.dataRate,  # original shannon dataRate
+                hop=1,
+                type='GSL',  # in case we just want to count hops
+            )
 
     # add inter-ISL and intra-ISL edges
     ###############################
@@ -7776,15 +7765,18 @@ def createGraph(earth, matching='Greedy'):
     global firstMove
     # biggestDist = -1
     for markovEdge in markovEdges:
-        g.add_edge(markovEdge.i, markovEdge.j,  # source and destination IDs
-                   slant_range=markovEdge.slant_range,  # slant range
-                   dataRate=1 / markovEdge.shannonRate,
-                   # Inverse of dataRate # FIXME sometimes markovEdge.shannonRate is 0
-                   dataRateOG=markovEdge.shannonRate,  # Original shannon datRate
-                   hop=1,  # in case we just want to count hops
-                   dij=markovEdge.dij,
-                   dji=markovEdge.dji,
-                   type='ISL')
+        g.add_edge(
+            markovEdge.i,
+            markovEdge.j,  # source and destination IDs
+            slant_range=markovEdge.slant_range / 1000.0,  # store km
+            dataRate=1 / markovEdge.shannonRate,
+            # Inverse of dataRate # FIXME sometimes markovEdge.shannonRate is 0
+            dataRateOG=markovEdge.shannonRate,  # Original shannon datRate
+            hop=1,  # in case we just want to count hops
+            dij=markovEdge.dij,
+            dji=markovEdge.dji,
+            type='ISL',
+        )
         if firstMove and markovEdge.slant_range > biggestDist:  # keep the biggest possible distance for the normalization of the rewards
             biggestDist = markovEdge.slant_range
 
@@ -9871,6 +9863,19 @@ def _get_node_coords_generic(earth, key):
 
     # terrestre per nome (string)
     if isinstance(k, str):
+        Gs = getattr(earth, "space_graph", None)
+        if Gs is not None and k in Gs:
+            nd = Gs.nodes[k]
+            lat = nd.get("lat")
+            lon = nd.get("lon")
+            if lat is None or lon is None:
+                sat_obj = nd.get("sat")
+                if sat_obj is not None:
+                    lat = getattr(sat_obj, "latitude", None)
+                    lon = getattr(sat_obj, "longitude", None)
+            if lat is not None and lon is not None:
+                return float(lat), float(lon)
+
         Gt = getattr(earth, "terr_graph", None)
         if Gt is not None and k in Gt:
             nd = Gt.nodes[k]
@@ -9950,87 +9955,6 @@ def _edge_type_generic(earth, u, v):
         return "gsl"
 
     return "unknown"
-
-
-def plotPathGeneric(earth, path_labels, out_dir, title="Path"):
-    """
-    Disegna una path mista (terra/satellite/ibrida) leggendo hop per hop.
-    - path_labels: lista di etichette (str/int/tuple) es. ['Bordeaux', '...','Espoo'] o [101, 205, ...]
-    - earth deve avere terr_graph e/o space_graph con 'lat','lon' sui nodi (come nel tuo setup)
-    Salva 'path_generic.png' in out_dir.
-    """
-    if not path_labels or len(path_labels) < 2:
-        print("[plotPathGeneric] path vuota o troppo corta.")
-        return
-
-    # Costruisci lista di coordinate e tipi di arco
-    segments = []
-    coords_cache = {}
-    def coord(k):
-        if k not in coords_cache:
-            coords_cache[k] = _get_node_coords_generic(earth, k)
-        return coords_cache[k]
-
-    for i in range(len(path_labels) - 1):
-        u = path_labels[i]
-        v = path_labels[i + 1]
-        lat_u, lon_u = coord(u)
-        lat_v, lon_v = coord(v)
-        if None in (lat_u, lon_u, lat_v, lon_v):
-            # salta hop senza coordinate
-            continue
-        et = _edge_type_generic(earth, u, v)  # 'terrestrial' | 'satellite' | 'gsl' | 'unknown'
-        segments.append(((lon_u, lat_u, lon_v, lat_v), et))
-
-    if not segments:
-        print("[plotPathGeneric] Nessun segmento plottabile (mancano coord?).")
-        return
-
-    # stile per tipo
-    style = {
-        "terrestrial": dict(linestyle="-", linewidth=2.2),
-        "satellite":   dict(linestyle="--", linewidth=2.2),
-        "gsl":         dict(linestyle=":", linewidth=2.2),
-        "unknown":     dict(linestyle="-.", linewidth=1.8),
-    }
-
-    # figure
-    plt.figure(figsize=(12, 5.5))
-    ax = plt.gca()
-
-    # traccia gli spezzoni per tipo
-    for (x1, y1, x2, y2), et in segments:
-        kw = style.get(et, style["unknown"])
-        ax.plot([x1, x2], [y1, y2], **kw, color="#2a5c8a")
-
-    # source/dest
-    src_lat, src_lon = _get_node_coords_generic(earth, path_labels[0])
-    dst_lat, dst_lon = _get_node_coords_generic(earth, path_labels[-1])
-    if None not in (src_lat, src_lon):
-        ax.scatter([src_lon], [src_lat], s=120, c="limegreen", edgecolors="black", zorder=5, label="source")
-    if None not in (dst_lat, dst_lon):
-        ax.scatter([dst_lon], [dst_lat], s=120, c="red", edgecolors="black", zorder=5, label="destination")
-
-    ax.set_xlabel("Longitude [deg]")
-    ax.set_ylabel("Latitude [deg]")
-    ax.set_title(title)
-    ax.legend(loc="upper right")
-
-    # lim auto con padding
-    all_x = [x for seg,_ in segments for x in (seg[0], seg[2])]
-    all_y = [y for seg,_ in segments for y in (seg[1], seg[3])]
-    if all_x and all_y:
-        dx = max(1.0, 0.05 * (max(all_x) - min(all_x)))
-        dy = max(1.0, 0.05 * (max(all_y) - min(all_y)))
-        ax.set_xlim(min(all_x) - dx, max(all_x) + dx)
-        ax.set_ylim(min(all_y) - dy, max(all_y) + dy)
-
-    plt.tight_layout()
-    out_path = out_dir.rstrip("/\\") + "/path_generic.png"
-    plt.savefig(out_path, dpi=140)
-    plt.close()
-    print(f"[plotPathGeneric] salvata in: {out_path}")
-
 
 # @profile
 def RunSimulation(GTs, inputPath, outputPath, populationData, radioKM):
@@ -10204,8 +10128,6 @@ def RunSimulation(GTs, inputPath, outputPath, populationData, radioKM):
             plotRatesFigures()
         else:
             # ---------- COSTRUZIONE ROBUSTA DEL DATASET PER plotSaveAllLatencies ----------
-            from collections import Counter
-
             allLatenciesRows = []
             rows_ok = 0
             rows_err = 0
@@ -10329,7 +10251,9 @@ def RunSimulation(GTs, inputPath, outputPath, populationData, radioKM):
 
             if last_path:
                 title_txt = f"Path: {main_src} → {main_dst}" if (main_src and main_dst) else "Path"
-                plotPathGeneric(earth1, last_path, outputPath, title=title_txt)
+                path_nodes = [hop[0] if isinstance(hop, (list, tuple)) else hop for hop in last_path]
+                earth1.plotMap(plotGT=True, plotSat=True, path=path_nodes, save=True,
+                               outputPath=outputPath)
             else:
                 print("[plotShortestPath] Nessun path disponibile: salto.")
 
