@@ -17630,7 +17630,7 @@
 -4.62
 ],
 "type":"Seacable Landing Point",
-"name":"Victoria",
+"name":"Victoria(Seychelles)",
 "id":1871
 },
 {
@@ -18098,7 +18098,7 @@
 12.19
 ],
 "type":"Seacable Landing Point",
-"name":"Kingston",
+"name":"Kingston(Jamaica)",
 "id":1817
 },
 {
@@ -20186,7 +20186,7 @@
 -33.91
 ],
 "type":"Seacable Landing Point",
-"name":"Alexandria",
+"name":"Alexandria(Australia)",
 "id":1580
 },
 {
@@ -21005,7 +21005,7 @@
 31.19
 ],
 "type":"Seacable Landing Point",
-"name":"Alexandria",
+"name":"Alexandria(Egypt)",
 "id":1488
 },
 {
@@ -32903,7 +32903,7 @@
 48.43
 ],
 "type":"City",
-"name":"Victoria",
+"name":"Victoria(Canada)",
 "id":162
 },
 {
@@ -32912,7 +32912,7 @@
 46.14
 ],
 "type":"City",
-"name":"Sydney",
+"name":"Sydney(Canada)",
 "id":161
 },
 {
@@ -33011,7 +33011,7 @@
 44.23
 ],
 "type":"City",
-"name":"Kingston",
+"name":"Kingston(Canada)",
 "id":150
 },
 {
