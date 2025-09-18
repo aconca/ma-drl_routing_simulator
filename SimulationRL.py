@@ -9869,9 +9869,9 @@ def plotSatelliteCongestionMap(earth, blocks, outdir, GTnumber, active_names=Non
             # Satellite congestion map saved in: {output_file}
             # Verify if file was created
             if os.path.exists(output_file):
-                print(f"✅ FILE CREATO: {output_file}")
+                print(f"FILE CREATO: {output_file}")
             else:
-                print(f"❌ FILE NON TROVATO: {output_file}")
+                print(f"FILE NON TROVATO: {output_file}")
     else:
         print("Nessun path satellitare trovato nei blocchi filtrati")
 
