@@ -17,6 +17,8 @@ from PIL import Image
 import seaborn as sns
 import gc
 import topohub
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
 
 # Matplotlib imports
 import matplotlib.pyplot as plt
@@ -7784,93 +7786,31 @@ def plotPathClean(earth, path_nodes, src_name, dst_name, output_file):
     Nuova funzione per plottare i path con mappa del mondo realistica.
     Gestisce correttamente i path ibridi e terrestri.
     """
-    # Plotting path: {src_name} → {dst_name} with {len(path_nodes)} nodes
 
-    # Prova a usare una mappa del mondo realistica
-    try:
-        import cartopy.crs as ccrs
-        import cartopy.feature as cfeature
+    fig = plt.figure(figsize=(16, 10))
+    ax = plt.axes(projection=ccrs.PlateCarree())
 
-        # Crea la figura con proiezione geografica
-        fig = plt.figure(figsize=(16, 10))
-        ax = plt.axes(projection=ccrs.PlateCarree())
+    # Imposta i limiti della mappa
+    ax.set_global()
 
-        # Imposta i limiti della mappa
-        ax.set_global()
+    # Aggiungi le caratteristiche geografiche realistiche
+    ax.add_feature(cfeature.OCEAN, color='#E6F3FF', alpha=0.8)
+    ax.add_feature(cfeature.LAND, color='#90EE90', alpha=0.8)
+    ax.add_feature(cfeature.BORDERS, linewidth=0.5, alpha=0.7)
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.8)
+    ax.add_feature(cfeature.RIVERS, linewidth=0.3, alpha=0.5)
+    ax.add_feature(cfeature.LAKES, color='#E6F3FF', alpha=0.8)
 
-        # Aggiungi le caratteristiche geografiche realistiche
-        ax.add_feature(cfeature.OCEAN, color='#E6F3FF', alpha=0.8)
-        ax.add_feature(cfeature.LAND, color='#90EE90', alpha=0.8)
-        ax.add_feature(cfeature.BORDERS, linewidth=0.5, alpha=0.7)
-        ax.add_feature(cfeature.COASTLINE, linewidth=0.8, alpha=0.8)
-        ax.add_feature(cfeature.RIVERS, linewidth=0.3, alpha=0.5)
-        ax.add_feature(cfeature.LAKES, color='#E6F3FF', alpha=0.8)
+    # Griglia
+    ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False,
+                 alpha=0.5, linestyle='--', linewidth=0.5)
 
-        # Griglia
-        ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False,
-                     alpha=0.5, linestyle='--', linewidth=0.5)
-
-        # Using Cartopy for realistic world map
-
-    except ImportError:
-        # Cartopy not available, using simplified map
-        # Fallback: simplified map if cartopy is not available
-        plt.figure(figsize=(16, 8))
-
-        # More beautiful world map background
-        plt.xlim(-180, 180)
-        plt.ylim(-90, 90)
-
-        # Sfondo oceano
-        ocean = plt.Rectangle((-180, -90), 360, 180, facecolor='#E6F3FF', alpha=0.8, zorder=0)
-        plt.gca().add_patch(ocean)
-
-        # Continents with more realistic shapes and better colors
-        # North America
-        north_america = plt.Rectangle((-170, 15), 120, 55, facecolor='#90EE90', alpha=0.7, zorder=1,
-                                      edgecolor='#228B22', linewidth=1)
-        plt.gca().add_patch(north_america)
-
-        # Sud America
-        south_america = plt.Rectangle((-85, -60), 50, 75, facecolor='#90EE90', alpha=0.7, zorder=1, edgecolor='#228B22',
-                                      linewidth=1)
-        plt.gca().add_patch(south_america)
-
-        # Europa/Africa
-        europe_africa = plt.Rectangle((-25, -35), 65, 105, facecolor='#90EE90', alpha=0.7, zorder=1,
-                                      edgecolor='#228B22', linewidth=1)
-        plt.gca().add_patch(europe_africa)
-
-        # Asia
-        asia = plt.Rectangle((40, 10), 140, 60, facecolor='#90EE90', alpha=0.7, zorder=1, edgecolor='#228B22',
-                             linewidth=1)
-        plt.gca().add_patch(asia)
-
-        # Australia
-        australia = plt.Rectangle((110, -50), 70, 40, facecolor='#90EE90', alpha=0.7, zorder=1, edgecolor='#228B22',
-                                  linewidth=1)
-        plt.gca().add_patch(australia)
-
-        # Griglia sottile per orientamento
-        plt.grid(True, alpha=0.2, zorder=2, linestyle='--', linewidth=0.5)
-        plt.xlabel('Longitude (°)', fontsize=12, fontweight='bold')
-        plt.ylabel('Latitude (°)', fontsize=12, fontweight='bold')
-
-        # Aggiungi etichette per i continenti
-        plt.text(-100, 40, 'North America', fontsize=10, ha='center', color='darkgreen', fontweight='bold', zorder=3)
-        plt.text(-60, -20, 'South America', fontsize=10, ha='center', color='darkgreen', fontweight='bold', zorder=3)
-        plt.text(0, 20, 'Europe/Africa', fontsize=10, ha='center', color='darkgreen', fontweight='bold', zorder=3)
-        plt.text(110, 40, 'Asia', fontsize=10, ha='center', color='darkgreen', fontweight='bold', zorder=3)
-        plt.text(145, -25, 'Australia', fontsize=10, ha='center', color='darkgreen', fontweight='bold', zorder=3)
-
-    # Converti i nodi del path in coordinate pixel
     x_coords = []
     y_coords = []
     node_info = []
 
     satellite_ids = [str(sat.ID) for plane in earth.LEO for sat in plane.sats]
 
-    # Identifica i gateway (nodi che collegano terrestre e satelliti)
     gateway_nodes = set()
     if hasattr(earth, 'gateways') and earth.gateways:
         for gw in earth.gateways:
@@ -7946,68 +7886,35 @@ def plotPathClean(earth, path_nodes, src_name, dst_name, output_file):
     # Determine if it's a hybrid path
     has_satellites = any(node in satellite_ids for node in path_nodes)
 
-    # Disegna la linea del path
-    try:
-        import cartopy.crs as ccrs
-        # Con cartopy
-        if has_satellites:
-            ax.plot(x_coords, y_coords, color='blue', linewidth=3, alpha=0.8, zorder=10,
-                    transform=ccrs.PlateCarree(), label='Hybrid Path')
-            path_type = "Hybrid Communication Path"
-        else:
-            ax.plot(x_coords, y_coords, color='red', linewidth=2, alpha=0.8, zorder=10,
-                    transform=ccrs.PlateCarree(), label='Terrestrial Path')
-            path_type = "Terrestrial Communication Path"
+    if has_satellites:
+        ax.plot(x_coords, y_coords, color='blue', linewidth=3, alpha=0.8, zorder=10,
+                transform=ccrs.PlateCarree(), label='Hybrid Path')
+        path_type = "Hybrid Communication Path"
+    else:
+        ax.plot(x_coords, y_coords, color='red', linewidth=2, alpha=0.8, zorder=10,
+                transform=ccrs.PlateCarree(), label='Terrestrial Path')
+        path_type = "Terrestrial Communication Path"
 
-        # Disegna i nodi
-        for i, (node, idx, lon, lat, px, py) in enumerate(node_info):
-            if i == 0:  # Start
-                ax.scatter(lon, lat, marker='o', c='green', s=100, linewidth=3,
-                           edgecolors='black', zorder=20, transform=ccrs.PlateCarree(), label='Start')
-            elif i == len(node_info) - 1:  # End
-                ax.scatter(lon, lat, marker='o', c='red', s=100, linewidth=3,
-                           edgecolors='black', zorder=20, transform=ccrs.PlateCarree(), label='End')
-            elif node in gateway_nodes:  # Gateway
-                ax.scatter(lon, lat, marker='x', c='red', s=80, linewidth=3,
-                           zorder=18, alpha=0.9, transform=ccrs.PlateCarree(), label='Gateway' if i == 2 else "")
-            else:  # Hops normali
-                if has_satellites and node in satellite_ids:
-                    # Nodo satellitare
-                    ax.scatter(lon, lat, marker='o', c='purple', s=30, linewidth=1,
-                               edgecolors='black', zorder=15, alpha=0.8, transform=ccrs.PlateCarree())
-                else:
-                    # Nodo terrestre
-                    ax.scatter(lon, lat, marker='o', c='cyan', s=40, linewidth=1,
-                               edgecolors='black', zorder=15, alpha=0.8, transform=ccrs.PlateCarree())
-    except ImportError:
-        # Senza cartopy
-        if has_satellites:
-            plt.plot(x_coords, y_coords, color='blue', linewidth=3, alpha=0.8, zorder=10, label='Hybrid Path')
-            path_type = "Hybrid Communication Path"
-        else:
-            plt.plot(x_coords, y_coords, color='red', linewidth=2, alpha=0.8, zorder=10, label='Terrestrial Path')
-            path_type = "Terrestrial Communication Path"
-
-        # Disegna i nodi
-        for i, (node, idx, lon, lat, px, py) in enumerate(node_info):
-            if i == 0:  # Start
-                plt.scatter(lon, lat, marker='o', c='green', s=100, linewidth=3,
-                            edgecolors='black', zorder=20, label='Start')
-            elif i == len(node_info) - 1:  # End
-                plt.scatter(lon, lat, marker='o', c='red', s=100, linewidth=3,
-                            edgecolors='black', zorder=20, label='End')
-            elif node in gateway_nodes:  # Gateway
-                plt.scatter(lon, lat, marker='x', c='red', s=80, linewidth=3,
-                            zorder=18, alpha=0.9, label='Gateway' if i == 2 else "")
-            else:  # Hops normali
-                if has_satellites and node in satellite_ids:
-                    # Nodo satellitare
-                    plt.scatter(lon, lat, marker='o', c='purple', s=30, linewidth=1,
-                                edgecolors='black', zorder=15, alpha=0.8)
-                else:
-                    # Nodo terrestre
-                    plt.scatter(lon, lat, marker='o', c='cyan', s=40, linewidth=1,
-                                edgecolors='black', zorder=15, alpha=0.8)
+    # Disegna i nodi
+    for i, (node, idx, lon, lat, px, py) in enumerate(node_info):
+        if i == 0:  # Start
+            ax.scatter(lon, lat, marker='o', c='green', s=100, linewidth=3,
+                       edgecolors='black', zorder=20, transform=ccrs.PlateCarree(), label='Start')
+        elif i == len(node_info) - 1:  # End
+            ax.scatter(lon, lat, marker='o', c='red', s=100, linewidth=3,
+                       edgecolors='black', zorder=20, transform=ccrs.PlateCarree(), label='End')
+        elif node in gateway_nodes:  # Gateway
+            ax.scatter(lon, lat, marker='x', c='red', s=80, linewidth=3,
+                       zorder=18, alpha=0.9, transform=ccrs.PlateCarree(), label='Gateway' if i == 2 else "")
+        else:  # Hops normali
+            if has_satellites and node in satellite_ids:
+                # Nodo satellitare
+                ax.scatter(lon, lat, marker='o', c='purple', s=30, linewidth=1,
+                           edgecolors='black', zorder=15, alpha=0.8, transform=ccrs.PlateCarree())
+            else:
+                # Nodo terrestre
+                ax.scatter(lon, lat, marker='o', c='cyan', s=40, linewidth=1,
+                           edgecolors='black', zorder=15, alpha=0.8, transform=ccrs.PlateCarree())
 
     # Titolo
     plt.title(f"{path_type}: {src_name} → {dst_name}\n"
@@ -8034,16 +7941,6 @@ def plotPathClean(earth, path_nodes, src_name, dst_name, output_file):
         legend_labels.append('Satellite Hop')
 
     plt.legend(legend_elements, legend_labels, loc='lower left', fontsize=10)
-
-    # Gestisci il caso senza cartopy
-    try:
-        import cartopy.crs as ccrs
-        # Con cartopy, non rimuovere gli assi (sono gestiti da gridlines)
-        pass
-    except ImportError:
-        # Senza cartopy, rimuovi assi come prima
-        plt.xticks([])
-        plt.yticks([])
 
     # Salva
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
