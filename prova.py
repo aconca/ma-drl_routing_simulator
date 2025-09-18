@@ -102,7 +102,7 @@ plotSatID = True  # If True, plots the ID of each satellite
 plotAllThro = True  # If True, it plots throughput plots for each single path between gateways. If False, it plots a single figure for overall Throughput
 plotAllCon = True  # If True, it plots congestion maps for each single path between gateways. If False, it plots a single figure for overall congestion
 
-movementTime = 0.25  # Every movementTime seconds, the satellites positions are updated and the graph is built again
+movementTime = 5  # Every movementTime seconds, the satellites positions are updated and the graph is built again
 # If do not want the constellation to move, set this parameter to a bigger number than the simulation time
 ndeltas = 5805.44 / 20  # 1 Movement speedup factor. Every movementTime sats will move movementTime*ndeltas space. If bigger, will make the rotation distance bigger
 
@@ -1318,8 +1318,6 @@ class Satellite:
 
         # simpy
         self.env = env
-        self.Qmax = 200  # Maximum buffer capacity (FIFO) - Satellites have smaller buffers
-        self.dropped_packets = 0  # Counter for dropped packets
         self.sendBufferGT = ([env.event()], [])  # ([self.env.event()], [DataBlock(0, 0, "0", 0)])
         self.sendBlocksGT = []  # env.process(self.sendBlock())  # simpy processes which send the data blocks
         self.sats = []
@@ -1352,23 +1350,6 @@ class Satellite:
         distance = math.sqrt((Re + self.h) ** 2 - (Re * math.cos(eps)) ** 2) - Re * math.sin(eps)
 
         return distance
-
-    def add_packet_to_buffer(self, packet, buffer_type="GT"):
-        """Add packet to buffer with FIFO and Qmax management"""
-        if buffer_type == "GT":
-            if len(self.sendBufferGT[1]) < self.Qmax:
-                self.sendBufferGT[1].append(packet)
-                return True
-            else:
-                self.dropped_packets += 1
-                return False
-        return False
-
-    def get_head_of_line(self, buffer_type="GT"):
-        """Get head of line packet (FIFO)"""
-        if buffer_type == "GT" and self.sendBufferGT[1]:
-            return self.sendBufferGT[1].pop(0)
-        return None
 
     def __repr__(self):
         return '\nID = {}\n orbital plane= {}, index in plane= {}, h={}\n pos r = {}, pos theta = {},' \
@@ -1952,8 +1933,6 @@ class TerrestrialNode:
         self.datBlocks = []
         self.fillBlocks = []
         self.sendBlocks = env.process(self.sendBlock())
-        self.Qmax = 2000  # Maximum buffer capacity (FIFO) - Terrestrial nodes have larger buffers
-        self.dropped_packets = 0  # Counter for dropped packets
         self.sendBuffer = ([env.event()], [])  # ([events], [blocks])
         self.paths = {}  # dest.name -> path (etichette int/str)
         self.dataRate = 1e9  # 1 Gbps default
@@ -1994,21 +1973,6 @@ class TerrestrialNode:
             pass
         finally:
             self.sendBuffer[0].append(self.env.event())
-
-    def add_packet_to_buffer(self, packet):
-        """Add packet to buffer with FIFO and Qmax management"""
-        if len(self.sendBuffer[1]) < self.Qmax:
-            self.sendBuffer[1].append(packet)
-            return True
-        else:
-            self.dropped_packets += 1
-            return False
-
-    def get_head_of_line(self):
-        """Get head of line packet (FIFO)"""
-        if self.sendBuffer[1]:
-            return self.sendBuffer[1].pop(0)
-        return None
 
     def cellDistance(self, cell) -> float:
         """Distanza geodesica (km) centro-cella ↔ nodo."""
@@ -2328,13 +2292,11 @@ class TerrestrialNode:
                     # *** QUEUE: entra in coda al sorgente ***
                     block.mark_enqueued(self.env.now)
 
-                    # Use FIFO buffer management with Qmax
-                    if self.add_packet_to_buffer(block):
-                        if not self.sendBuffer[0][0].triggered:
-                            self.sendBuffer[0][0].succeed()
+                    if not self.sendBuffer[0][0].triggered:
+                        self.sendBuffer[0][0].succeed()
                     else:
                         self.sendBuffer[0].append(self.env.event().succeed())
-                    # If add_packet_to_buffer returns False, packet was dropped
+                    self.sendBuffer[1].append(block)
                     index += 1
 
             except simpy.Interrupt:
@@ -2536,8 +2498,6 @@ class Gateway:
         self.datBlocks = []  # list of outgoing data blocks - one for each destination GT
         self.fillBlocks = []  # list of simpy processes which fills up the data blocks
         self.sendBlocks = env.process(self.sendBlock())  # simpy process which sends the data blocks
-        self.Qmax = 1000  # Maximum buffer capacity (FIFO) - Gateways have medium buffers
-        self.dropped_packets = 0  # Counter for dropped packets
         self.sendBuffer = ([env.event()], [])  # queue of blocks that are ready to be sent
         self.paths = {}  # dictionary for destination: path pairs
 
@@ -2661,14 +2621,14 @@ class Gateway:
                         exit()
                     block.timeAtFull = self.env.now
                     createdBlocks.append(block)
-                    # add block to send-buffer using FIFO with Qmax
-                    if self.add_packet_to_buffer(block):
-                        if not self.sendBuffer[0][0].triggered:
-                            self.sendBuffer[0][0].succeed()
+                    # add block to send-buffer
+                    if not self.sendBuffer[0][0].triggered:
+                        self.sendBuffer[0][0].succeed()
+                        self.sendBuffer[1].append(block)
                     else:
                         newEvent = self.env.event().succeed()
                         self.sendBuffer[0].append(newEvent)
-                    # If add_packet_to_buffer returns False, packet was dropped
+                        self.sendBuffer[1].append(block)
                     index += 1
             except simpy.Interrupt:
                 print(f'Simpy interrupt at filling block at gateway{self.name}')
@@ -2753,7 +2713,7 @@ class Gateway:
                     break
 
             if cur_idx is None:
-                #print(f"[ERROR] Current node {self.name} not in path {path_keys}")
+                print(f"[ERROR] Current node {self.name} not in path {path_keys}")
                 self.sendBuffer[0].pop(0)
                 self.sendBuffer[1].pop(0)
                 self.sendBuffer[0].append(self.env.event())
@@ -2848,6 +2808,46 @@ class Gateway:
 
         process = self.env.process(self.receiveBlock(block, propTime))
 
+    # def receiveBlock(self, block, propTime):
+    #     """
+    #     Simpy process function:
+    #
+    #     This function is used to handle the propagation delay of data blocks. This is done simply by waiting the time
+    #     of the propagation delay. As a GT will always be the last step in a block's path, there is no need to send the
+    #     block further. After the propagation delay, the block is simply added to a list of finished blocks so the KPIs
+    #     can be tracked at the end of the simulation.
+    #
+    #     While the transmission delay is handled at the transmitter, the transmitter cannot also wait for the propagation
+    #     delay, otherwise the send-buffer might be overfilled.
+    #     """
+    #     # clamp per sicurezza (niente tempi negativi)
+    #     if propTime is None or propTime < 0:
+    #         propTime = 0
+    #
+    #     # attesa propagazione
+    #     yield self.env.timeout(propTime)
+    #
+    #     # KPI: propagation latency
+    #     if not hasattr(block, 'propLatency') or block.propLatency is None:
+    #         block.propLatency = 0.0
+    #     block.propLatency += propTime
+    #
+    #     # checkpoint list always present
+    #     if not hasattr(block, 'checkPoints') or block.checkPoints is None:
+    #         block.checkPoints = []
+    #     block.checkPoints.append(self.env.now)
+    #
+    #     # optional: small warning if gateway is not the expected destination
+    #     try:
+    #         dest_name = getattr(block.destination, 'name', None)
+    #         if dest_name is not None and dest_name != self.name:
+    #             print(f"[WARN] Block destined to {dest_name} received by {self.name}.")
+    #     except Exception:
+    #         pass
+    #
+    #     # registra il blocco ricevuto
+    #     receivedDataBlocks.append(block)
+
     def receiveBlock(self, block, propTime):
         """Gateway: può ricevere da terra o dallo spazio e inoltrare ulteriormente."""
         yield self.env.timeout(propTime)
@@ -2860,28 +2860,11 @@ class Gateway:
             return
 
         # otherwise enqueue in my buffer; my sendBlock will use block.path
-        # Use FIFO buffer management with Qmax
-        if self.add_packet_to_buffer(block):
-            if not self.sendBuffer[0][0].triggered:
-                self.sendBuffer[0][0].succeed()
+        if not self.sendBuffer[0][0].triggered:
+            self.sendBuffer[0][0].succeed()
         else:
             self.sendBuffer[0].append(self.env.event().succeed())
-        # If add_packet_to_buffer returns False, packet was dropped
-
-    def add_packet_to_buffer(self, packet):
-        """Add packet to buffer with FIFO and Qmax management"""
-        if len(self.sendBuffer[1]) < self.Qmax:
-            self.sendBuffer[1].append(packet)
-            return True
-        else:
-            self.dropped_packets += 1
-            return False
-
-    def get_head_of_line(self):
-        """Get head of line packet (FIFO)"""
-        if self.sendBuffer[1]:
-            return self.sendBuffer[1].pop(0)
-        return None
+        self.sendBuffer[1].append(block)
 
     def cellDistance(self, cell) -> float:
         """
@@ -7444,8 +7427,8 @@ def createGraph(earth, matching='Greedy'):
     return g
 
 
-def build_terrestrial_graph(json_path: str, gateways_csv: str, k_nearest: int = 3, rate_normal: float = 10e9,
-                            rate_seacable: float = 100e9, rate_gateway: float = 10e9):
+def build_terrestrial_graph(json_path: str, gateways_csv: str, k_nearest: int = 3, rate_normal: float = 5e9,
+                            rate_seacable: float = 10e9, rate_gateway: float = 5e9):
     """
     Costruisce il grafo terrestre a partire dal JSON TopoHub (node-link),
     rinomina i nodi usando 'name' come chiave (stringa),
@@ -9886,9 +9869,9 @@ def plotSatelliteCongestionMap(earth, blocks, outdir, GTnumber, active_names=Non
             # Satellite congestion map saved in: {output_file}
             # Verify if file was created
             if os.path.exists(output_file):
-                print(f"FILE CREATO: {output_file}")
+                print(f"✅ FILE CREATO: {output_file}")
             else:
-                print(f"FILE NON TROVATO: {output_file}")
+                print(f"❌ FILE NON TROVATO: {output_file}")
     else:
         print("Nessun path satellitare trovato nei blocchi filtrati")
 
@@ -10241,18 +10224,6 @@ def RunSimulation(GTs, inputPath, outputPath, populationData, radioKM):
             print(f"Created DataBlocks:  {created_count}")
             print(f"Received DataBlocks: {received_count}")
             print(f"Stuck (in-flight):   {stuck_count}")
-
-            # Calculate total dropped packets from all nodes
-            total_dropped = 0
-            # Satellites are in global variable, not earth1.satellites
-            if 'Satellites' in globals():
-                for sat in Satellites:
-                    total_dropped += getattr(sat, 'dropped_packets', 0)
-            for gt in earth1.gateways:
-                total_dropped += getattr(gt, 'dropped_packets', 0)
-            for node in earth1.terrestrial_nodes:
-                total_dropped += getattr(node, 'dropped_packets', 0)
-            print(f"Dropped packets:     {total_dropped}")
             print("---- Latency Breakdown (means) ----")
             print(f"Queue:        {mean_q:.6f} s ({p_q:.1f}%)")
             print(f"Transmission: {mean_tx:.6f} s ({p_tx:.1f}%)")
