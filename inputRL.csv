@@ -1,5 +1,5 @@
 Locations,Constellation,Fraction,Test type,Test length
-Malaga,Kepler,0.01,Latency,1.00
+Malaga,Kepler,0.1,Latency,4.00
 Los Angeles
 Aalborg
 Mauritius
@@ -30,5 +30,8 @@ Hartebeesthoek
 Dubai
 Mingenew
 Okinawa
-Colorado Springs
-Jerusalem
+Seattle
+Cagliari
+Kaliningrad
+Salamanca
+La Laguna

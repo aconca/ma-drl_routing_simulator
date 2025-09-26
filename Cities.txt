@@ -1,0 +1,1266 @@
+List of possible terrestrial active nodes(organized by continent)
+
+### Africa ###
+
+Aba
+Abeokuta
+Abhā
+Al Fayyūm
+Al Jubayl
+Al Minyā
+Al Mubarraz
+Al Qurayyāt
+Amman
+Arish
+As Sālimīyah
+Ashqelon
+Asyūţ
+Bafoussam
+Beersheba
+Benghazi
+Beni Mellal
+Bethal
+Bhisho
+Birnin Kebbi
+Bloemfontein
+Borūjerd
+Bulawayo
+Buraydah
+Carletonville
+Damascus
+Effon Alaiye
+El Jadida
+Esuk Oron
+Fès
+Gagnoa
+Gashua
+Gusau
+Haifa
+Harare
+Huambo
+Ibadan
+Ikeja
+Ila Orangun
+Ilobu
+Ise-Ekiti
+Iwo
+Jalingo
+Jeddah
+Jerusalem
+Kafr ad Dawwār
+Kankan
+Kermānshāh
+Khemisset
+Kishi
+Kosti
+Kroonstad
+La Laguna
+Lafia
+Las Palmas de Gran Canaria
+Libreville
+Livingstone
+Makurdi
+Malakal
+Malindi
+Malāyer
+Marrakesh
+Masjed Soleymān
+Mecca
+Meknès
+Midrand
+Mohammedia
+Mombasa
+Moshi
+Mufulira
+Nablus
+Najrān
+Nakuru
+Newcastle
+Nkpor
+N’dalatando
+Oujda
+Owerri
+Owo
+Port Elizabeth
+Port Louis
+Port Said
+Praia
+Richards Bay
+Riyadh
+Sakākā
+Sapele
+Sidon
+Soweto
+Suez
+Sulţānah
+Tabūk
+Tanda
+Taza
+Tripoli
+Tripoli
+Unaizah
+Uromi
+Vanderbijlpark
+Zagazig
+Īlām
+Ţalkhā
+Ḩalwān
+‘Ar‘ar
+
+
+### America ###
+
+Abbotsford
+Abilene
+Acarigua
+Aguascalientes
+Akron
+Alagoinhas
+Albuquerque
+Allentown
+Amarillo
+Amherst
+Anaco
+Angra dos Reis
+Ann Arbor
+Antofagasta
+Anápolis
+Aparecida de Goiânia
+Apucarana
+Aracaju
+Araguaína
+Araçatuba
+Arica
+Arlington
+Athens
+Atlanta
+Austin
+Bahía Blanca
+Bakersfield
+Baltimore
+Barbacena
+Barcelona
+Barra Mansa
+Barrancabermeja
+Barrie
+Baton Rouge
+Bauru
+Beaumont
+Belém
+Birmingham
+Blumenau
+Boa Vista
+Boise
+Boston
+Brooklyn
+Burlington
+Cagua
+Cajamarca
+Calabozo
+Camaçari
+Campo Grande
+Campos
+Cape Coral
+Capiatá
+Carlsbad
+Carolina
+Cartago
+Carúpano
+Catanduva
+Caxias
+Cedar Rapids
+Centennial
+Centro Habana
+Charleston
+Charlotte
+Chesapeake
+Chicago
+Chimbote
+Cholula
+Cienfuegos
+Cincinnati
+Ciudad Acuña
+Ciudad Bolívar
+Ciudad Delicias
+Ciudad Guzmán
+Ciudad Juárez
+Ciudad Madero
+Ciudad Valles
+Ciudad Victoria
+Ciudad de Villa de Álvarez
+Clearwater
+Colatina
+Colorado Springs
+Columbia
+Columbia
+Columbus
+Comodoro Rivadavia
+Concord
+Concordia
+Conselheiro Lafaiete
+Coquitlam
+Coral Springs
+Coronel Fabriciano
+Corrientes
+Criciúma
+Cumaná
+Cúcuta
+Dartmouth
+Dayton
+Denton
+Detroit
+Durham
+East Chattanooga
+East Independence
+Edmonton
+El Tigre
+Elgin
+Erie
+Escondido
+Etobicoke
+Evansville
+Everett
+Fargo
+Fayetteville
+Flint
+Florianópolis
+Floridablanca
+Fort Collins
+Fort Wayne
+Fresno
+Gainesville
+Georgetown
+Girardot
+Governador Valadares
+Grand Rapids
+Greater Sudbury
+Green Bay
+Greensboro
+Guanare
+Guaratinguetá
+Guaymas
+Guaíba
+Gómez Palacio
+Honolulu
+Houston
+Huntington Beach
+Huntsville
+Ibarra
+Iguala de la Independencia
+Imperatriz
+Indianapolis
+Iquitos
+Irapuato
+Ironville
+Itabuna
+Itapevi
+Itu
+Jackson
+Jacksonville
+Jaú
+Jequié
+Jiutepec
+Joinville
+Juazeiro do Norte
+Kelowna
+Killeen
+Kingston(Canada)
+Kingston(Jamaica)
+Kitchener
+Knoxville
+Lafayette
+Lancaster
+Laredo
+Lexington
+Lincoln
+Little Rock
+Loja
+London
+Londrina
+Los Mochis
+Los Teques
+Louisville
+Lubbock
+Luziânia
+Maceió
+Machala
+Madison
+Maicao
+Manchester
+Manizales
+Manta
+Manzanillo
+Manzanillo
+Mar del Plata
+Masaya
+Maturín
+McAllen
+McKinney
+Medellín
+Mejicanos
+Mendoza
+Mesa
+Mesquite
+Metairie Terrace
+Metropolitan Government of Nashville-Davidson (balance)
+Midland
+Milwaukee
+Minneapolis
+Mixco
+Mobile
+Modesto
+Mogi Guaçu
+Monterrey
+Montevideo
+Montgomery
+Montréal
+Morelia
+Mossoró
+Mucumpiz
+Naperville
+Nassau
+Neiva
+Neuquén
+New South Memphis
+Niterói
+North Stamford
+Nova Friburgo
+Oaxaca
+Ocumare del Tuy
+Okanagan
+Omaha
+Orlando
+Oshawa
+Osorno
+Ottawa
+Oxnard Shores
+Palm Bay
+Palma Soriano
+Palmas
+Palmira
+Paraná
+Parnamirim
+Paulista
+Pembroke Pines
+Peoria
+Pereira
+Petit Goâve
+Petrópolis
+Philadelphia
+Pindamonhangaba
+Pittsburgh
+Ponce
+Popayán
+Port Saint Lucie
+Port-au-Prince
+Porto Velho
+Portoviejo
+Potosí
+Pouso Alegre
+Poza Rica de Hidalgo
+Poços de Caldas
+Providence
+Provo
+Pueblo
+Puerto Montt
+Puerto Vallarta
+Puno
+Punta Arenas
+Quevedo
+Quilmes
+Québec
+Regina
+Ribeirão das Neves
+Richmond
+Rio Claro
+Rochester
+Rockford
+Rondonópolis
+Río Cuarto
+Sacramento
+Saguenay
+Saint Petersburg
+Salinas
+Salta
+San Antonio
+San Diego
+San Fernando del Valle de Catamarca
+San Luis Río Colorado
+San Miguel de Tucumán
+San Miguelito
+San Nicolás de los Arroyos
+Santa Clara
+Santa Maria
+Santa Marta
+Santa Rosa
+Santarém
+Santiago
+Santiago del Estero
+Saskatoon
+Savannah
+Seattle
+Sete Lagoas
+Sherbrooke
+Sobral
+Soledad
+South Bend
+Springfield
+St. Catharines
+Stockton
+Sumaré
+Sunnyvale
+Sunrise Manor
+Surco
+Sydney
+Syracuse
+São José
+São José do Rio Preto
+São José dos Pinhais
+São Luís
+São Paulo
+Talca
+Tallahassee
+Temecula
+Temuco
+Tepic
+Teresópolis
+Tlaquepaque
+Toledo
+Toluca de Lerdo
+Topeka
+Trujillo
+Tucson
+Tulsa
+Tuluá
+Tumbes
+Uberlândia
+Valdivia
+Valencia(Venezuela)
+Valencia(USA)
+Vancouver
+Varginha
+Venustiano Carranza
+Veracruz
+Viamão
+Victoria(Canada)
+Victoria de Durango
+Victorville
+Vila Velha
+Villavicencio
+Virginia Beach
+Visalia
+Vitória da Conquista
+Vitória de Santo Antão
+Viña del Mar
+Várzea Paulista
+West Raleigh
+West Valley City
+Wichita
+Wilmington
+Winnipeg
+Winston-Salem
+
+
+### Asia ###
+
+Abu Dhabi
+Ahmadpur East
+Aizawl
+Ajman
+Akita Shi
+Al Ain
+Al Sohar
+Alandur
+Alor Setar
+Ambon
+Anbu
+Angarsk
+Anqiu
+Anshan
+Anshun
+Aomori Shi
+As Sīb al Jadīdah
+Asahikawa
+Baicheng
+Baishan
+Banda Aceh
+Batu Pahat
+Batāla
+Bengkulu
+Bhadrāvati
+Bhiwāni
+Bijapur
+Bilimora
+Biysk
+Biên Hòa
+Bokāro
+Borivli
+Bulandshahr
+Butterworth
+Buôn Ma Thuột
+Bāli
+Bānkura
+Bānsbāria
+Chandrapur
+Changchun
+Changde
+Changsha
+Changshu City
+Chengdu
+Chengzhong
+Chifeng
+Chikushino-shi
+Chita
+Chon Buri
+Chongqing
+Chuzhou
+Cochin
+Cotabato
+Curug
+Cần Thơ
+Cẩm Phả Mines
+Dali
+Dalian
+Daliang
+Dammam
+Dandong
+Dazhou
+Dehradun
+Deyang
+Dhaulpur
+Dhule
+Digos
+Dingzhou
+Doha
+Donghai
+Dongling
+Dongxing
+Dunhua
+Dārjiling
+Ebetsu
+Ekibastuz
+Encheng
+Ezhou
+Fenghuang
+Fukushima-shi
+Fukuyama
+Fushun
+Fuyu
+Fuzhou
+Gadag
+Galkissa
+Gaozhou
+Gardēz
+Gejiu
+General Santos
+Gongzhuling
+Gorakhpur
+Gorontalo
+Guangming
+Gudivāda
+Guilin
+Haikou
+Hailun
+Hakodate
+Hamamatsu
+Hami
+Hanoi
+Hegang
+Hengyang
+Hikone
+Hirosaki
+Hiroshima-shi
+Ho Chi Minh City
+Huai'an
+Huaibei
+Huainan
+Huicheng
+Huizhou
+Hulan
+Hulan Ergi
+Huzhou
+Huế
+Hwado
+Hāpur
+Hōfu
+Irkutsk
+Ishinomaki
+Iwakuni
+Jalpāiguri
+Jambi City
+Jaunpur
+Jeonju
+Jessore
+Jhelum
+Jiaojiang
+Jiaozuo
+Jiaxing
+Jieshi
+Jilin
+Jinchang
+Jingzhou
+Jining
+Jōetsu
+Kagoshima-shi
+Kaifeng
+Kaiyuan
+Kalmunai
+Kangding
+Kashi
+Katihar
+Kemerovo
+Kermān
+Kitakyūshū
+Kitami
+Klang
+Kohāt
+Kokshetau
+Komatsu
+Komsomol’sk-na-Amure
+Kostanay
+Kota Kinabalu
+Kotli
+Kowloon
+Kuala Terengganu
+Kuantan
+Kuching
+Kumagaya
+Kumamoto-shi
+Kunsan
+Kushiro
+Kyzyl
+Kōchi-shi
+Kōriyama
+Lahad Datu
+Lahore
+Laiwu
+Laiyang
+Lecheng
+Leiyang
+Leninsk-Kuznetskiy
+Lianghu
+Lianhe
+Liaocheng
+Liaoyuan
+Linyi
+Longjiang
+Loni
+Lubuklinggau
+Lucknow
+Lumajang
+Luofeng
+Luoyang
+Macau
+Madanapalle
+Mahbūbnagar
+Male
+Malingao
+Malir Cantonment
+Mandaue City
+Manila
+Mansilingan
+Marawi City
+Martapura
+Masan
+Matsue-shi
+Matsumoto
+Matsuyama-shi
+Medan
+Meizhou
+Melaka
+Metro
+Mezhdurechensk
+Mianyang
+Miass
+Mirpur Khas
+Mishima
+Mito-shi
+Miyakonojō
+Miyazaki-shi
+Moppo
+Morioka-shi
+Muar
+Nagano-shi
+Nagaoka
+Nagasaki-shi
+Nagda
+Najafābād
+Nakhodka
+Nakhon Ratchasima
+Nanchong
+Nanjing
+Nanping
+Navoiy Shahri
+Nha Trang
+Niihama
+Nizhnevartovsk
+Noril’sk
+Novosibirsk
+Noyabr'sk
+Nāgercoil
+Nārāyanganj
+Okayama-shi
+Okinawa Node
+Ordos
+Osan
+Otaru
+Oyama
+Ozërsk
+Palu
+Panalanoy
+Panshan
+Pavlodar
+Pemalang
+Pematangsiantar
+Phan Thiết
+Phitsanulok
+Pingdingshan
+Ponnāni
+Prokop’yevsk
+Pulandian
+Puqi
+Puyang
+Quanzhou
+Qui Nhon
+Ra’s al Khaymah
+Roorkee
+Rạch Giá
+Sa Pá
+Sakata
+San Fernando
+San Jose
+Sandakan
+Sanming
+Sasebo
+Secunderabad
+Sekudai
+Seoul
+Seremban
+Seversk
+Shahr-e Kord
+Shaoguan
+Shaoxing
+Shibuya-ku
+Shihezi
+Shijiazhuang
+Shilong
+Shimminatochō
+Shiyan
+Shizuishan
+Shizuoka-shi
+Shāhreẕā
+Sibu
+Singaraja
+Solāpur
+Songjiang
+Suihua
+Suining
+Sumedang Utara
+Suncheon
+Surgut
+Suzhou
+Sóc Trăng
+Sūjāngarh
+Tagum
+Taichung
+Taiping
+Taishan
+Takamatsu-shi
+Taldyqorghan
+Taldyqorghan
+Taraz
+Tawau
+Tegal
+Tenan
+Ternate
+Thành Phố Hạ Long
+Thành Phố Nam Định
+Thành phố Bạc Liêu
+Tianshui
+Tieli
+Toledo
+Tongchuan
+Tongliao
+Tottori
+Toyohashi
+Tsukuba
+Tyumen
+Ube
+Ubon Ratchathani
+Ussuriysk
+Vejalpur
+Vellore
+Vladivostok
+Wanxian
+Weifang
+Wenshan City
+Wuda
+Wuhan
+Wuxi
+Wuxue
+Wŏnju
+Xiangtan
+Xiazhen
+Xichang
+Xindi
+Xinji
+Xintai
+Xinxiang
+Xinyang
+Xi’an
+Yamagata-shi
+Yangshuo
+Yanji
+Yao
+Yavatmāl
+Yekaterinburg
+Yichang
+Yichun
+Yinchuan
+Yiyang
+Yokkaichi
+Yonago
+Yuanlin
+Yunfu
+Yuxi
+Yuyao
+Yuzhno-Sakhalinsk
+Zalantun
+Zhaodong
+Zhenjiang
+Zhenzhou
+Zhicheng
+Zhucheng
+Zāhedān
+Āgra
+Ōita-shi
+Şalālah
+
+
+### Europe ###
+
+Aalborg Node
+Aberdeen
+Adapazarı
+Admiralteisky
+Aix-en-Provence
+Aksaray
+Al Hoceïma
+Alanya
+Albacete
+Almere Stad
+Almería
+Amadora
+Amiens
+Ancona
+Angers
+Ankara
+Antalya
+Antioch
+Antwerpen
+Apeldoorn
+Aqtöbe
+Arad
+Arkhangel’sk
+Atyrau
+Babruysk
+Baia Mare
+Balıkesir
+Banja Luka
+Basel
+Basildon
+Bataysk
+Belfast
+Berezniki
+Bergamo
+Bergen
+Bern
+Besançon
+Białystok
+Bielefeld
+Bielsko-Biała
+Bila Tserkva
+Bizerte
+Bolton
+Bonn
+Bordeaux
+Botoşani
+Boulogne-Billancourt
+Bratislava
+Braunschweig
+Bremen
+Bremerhaven
+Brescia
+Brest
+Bristol
+Brno
+Brugge
+Brussels
+Budapest XIV. kerület
+Burgas
+Buzău
+Bydgoszcz
+Bălţi
+Cagliari
+Cambridge
+Cardiff
+Cartagena
+Castelló de la Plana
+Catania
+Cergy-Pontoise
+Cheboksary
+Cheltenham
+Chemnitz
+Cherepovets
+Cherkasy
+Cherkessk
+Chişinău
+Clermont-Ferrand
+Cluj-Napoca
+Coimbra
+Constantine
+Copenhagen
+Cork
+Coventry
+Crawley
+Córdoba
+Daugavpils
+Deir ez-Zor
+Dijon
+Dos Hermanas
+Durrës
+Dzerzhinsk
+Dún Laoghaire
+Eastbourne
+Eindhoven
+El Eulma
+Elazığ
+Elista
+Enschede
+Erfurt
+Erlangen
+Erzurum
+Eskişehir
+Espoo
+Exeter
+Ferrara
+Foggia
+Forlì
+Freiburg
+Galaţi
+Gasteiz / Vitoria
+Gdynia
+Genova
+Gent
+Genève
+Gera
+Gijón
+Glasgow
+Gonbad-e Qābūs
+Gorzów Wielkopolski
+Graz
+Grenoble
+Groningen
+Groznyy
+Göteborg
+Göttingen
+Halle (Saale)
+Hamm
+Hannover
+Heidelberg
+Heilbronn
+Herne
+Homyel’
+Huelva
+Iaşi
+Ingolstadt
+Ipswich
+Irákleion
+Isparta
+Izhevsk
+Jaén
+Jena
+Jerez de la Frontera
+K'ut'aisi
+Kaliningrad
+Kaluga
+Kamyshin
+Kaunas
+Kecskemét
+Khasavyurt
+Khenchela
+Khmel’nyts’kyy
+Kiel
+Kielce
+Kirovohrad
+Kislovodsk
+Koblenz
+Kolpino
+Konya
+Kostroma
+Koszalin
+Košice
+Kragujevac
+Kreuzberg
+Kryvyy Rih
+Kumanovo
+Kursk
+Kızıltepe
+Latakia
+Le Havre
+Le Mans
+Leeds
+Leipzig
+León
+Lille
+Limoges
+Liverpool
+Ljubljana
+Lleida
+Lublin
+Lyon
+Lárisa
+Lübeck
+Maastricht
+Magdeburg
+Mahilyow
+Makhachkala
+Makiyivka
+Maladzyechna
+Malatya
+Malmö
+Marbella
+Marienthal
+Marseille
+Mascara
+Maykop
+Mazyr
+Mendip
+Mestre
+Metz
+Middlesbrough
+Milano
+Milton Keynes
+Miskolc
+Mitrovicë
+Montpellier
+Moscow
+Mostar
+Mulhouse
+Murcia
+Mykolayiv
+München
+Münster
+Naberezhnyye Chelny
+Nador
+Nal’chik
+Namur
+Nancy
+Nantes
+Navapolatsk
+Neftekamsk
+Nice
+Nicosia
+Nijmegen
+Noginsk
+Norwich
+Novara
+Novomoskovsk
+Nyíregyháza
+Nîmes
+Odense
+Oktyabr’skiy
+Oldenburg
+Olomouc
+Olsztyn
+Ordu
+Orekhovo-Zuyevo
+Orléans
+Oslo
+Ostrava
+Oulu
+Ourense
+Oviedo
+Paderborn
+Palermo
+Palma
+Perm’
+Perpignan
+Perugia
+Peterborough
+Petrozavodsk
+Pinsk
+Piraeus
+Piteşti
+Ploieşti
+Plovdiv
+Plymouth
+Podgorica
+Poole
+Poznań
+Prato
+Pristina
+Pskov
+Pyatigorsk
+Pátra
+Qazvin
+Radom
+Ravenna
+Regensburg
+Reggio nell'Emilia
+Reims
+Rennes
+Reutlingen
+Reykjavík
+Riga
+Rijeka
+Rivne
+Rome
+Rouen
+Ruse
+Ryazan’
+Rzeszów
+Râmnicu Vâlcea
+Saarbrücken
+Salamanca
+Salerno
+Salzburg
+Sanandaj
+Santander
+Sarajevo
+Saratov
+Satu Mare
+Sergiyev Posad
+Serpukhov
+Setúbal
+Severodvinsk
+Sheffield
+Siegen
+Siirt
+Siverek
+Slough
+Smolensk
+Sochi
+Sofia
+Solikamsk
+Southampton
+Split
+Stara Zagora
+Stavanger
+Stavropol’
+Sterlitamak
+Stockholm
+Stockport
+Stoke-on-Trent
+Strasbourg
+Suceava
+Sumqayıt
+Sunderland
+Swansea
+Swindon
+Syktyvkar
+Szeged
+Taganrog
+Tallinn
+Tambov
+Tampere
+Taranto
+Tarnów
+Tarragona
+Tarsus
+Tbilisi
+Telford
+Terrassa
+Thessaloníki
+Tilburg
+Tiraspol
+Tokat
+Tol’yatti
+Toruń
+Toulon
+Toulouse
+Tours
+Trier
+Trondheim
+Turgutlu
+Turhal
+Turku
+Tychy
+Târgu-Mureş
+Ufa
+Ulm
+Ulyanovsk
+Uppsala
+Utrecht
+Uzhhorod
+Uşak
+Valencia(Spain)
+Valladolid
+Varna
+Varāmīn
+Velikiye Luki
+Vicenza
+Vienna
+Villaverde
+Vilnius
+Viranşehir
+Vitebsk
+Vladikavkaz
+Volgodonsk
+Vologda
+Volzhskiy
+Västerås
+Wałbrzych
+Wiesbaden
+Wolfsburg
+Wrocław
+Würzburg
+Włocławek
+Yaroslavl
+Yelets
+Yenakiyeve
+Yevpatoriya
+York
+Yoshkar-Ola
+Zagreb
+Zaragoza
+Zielona Góra
+Zlatoust
+Zwolle
+Zürich
+Århus
+Çorlu
+Üsküdar
+Čačak
+İskenderun
+İzmir
+İzmit
+Łódź
+Śródmieście
+Şanlıurfa
+Šiauliai
+
+
+### Oceania ###
+
+Adelaide
+Bendigo
+Brisbane
+Cairns
+Canberra
+Christchurch
+Darwin
+Dunedin
+Geelong
+Gold Coast
+Hamilton
+Hobart
+Manukau City
+Newcastle
+Rockingham
+Sydney
+Tauranga
+Toowoomba
+Townsville
+Wellington
+Wollongong
